@@ -1,0 +1,70 @@
+name: Deploy
+
+on:
+  push:
+    branches: [staging, main]
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: Environment to deploy
+        required: true
+        type: choice
+        options: [staging, production]
+
+permissions:
+  contents: read
+
+jobs:
+  deploy-staging:
+    if: >-
+      (github.event_name == 'push' && github.ref == 'refs/heads/staging') ||
+      (github.event_name == 'workflow_dispatch' && inputs.environment == 'staging')
+    runs-on: ubuntu-latest
+    environment: staging
+    concurrency:
+      group: deploy-vendor-server-staging
+      cancel-in-progress: false
+    steps:
+      - name: Deploy vendor server to staging
+        uses: appleboy/ssh-action@v1.2.0
+        with:
+          host: ${{ secrets.DEPLOY_HOST }}
+          username: ${{ secrets.DEPLOY_USER }}
+          key: ${{ secrets.DEPLOY_SSH_KEY }}
+          script_stop: true
+          command_timeout: 30m
+          script: |
+            set -euo pipefail
+            deploy_root="${HOME}/var/www/vendor-server-staging"
+            cd "$deploy_root"
+            mkdir -p logs shared
+            git fetch origin staging
+            git reset --hard origin/staging
+            PEPSA_DEPLOY_ROOT="$deploy_root" PEPSA_PM2_ENV=staging bash deploy/scripts/remote-deploy.sh
+
+  deploy-production:
+    if: >-
+      (github.event_name == 'push' && github.ref == 'refs/heads/main') ||
+      (github.event_name == 'workflow_dispatch' && inputs.environment == 'production')
+    runs-on: ubuntu-latest
+    environment: production
+    concurrency:
+      group: deploy-vendor-server-production
+      cancel-in-progress: false
+    steps:
+      - name: Deploy vendor server to production
+        uses: appleboy/ssh-action@v1.2.0
+        with:
+          host: ${{ secrets.DEPLOY_HOST }}
+          username: ${{ secrets.DEPLOY_USER }}
+          key: ${{ secrets.DEPLOY_SSH_KEY }}
+          script_stop: true
+          command_timeout: 30m
+          script: |
+            set -euo pipefail
+            deploy_root="${HOME}/var/www/vendor-server-production"
+            cd "$deploy_root"
+            mkdir -p logs shared
+            git fetch origin main
+            git reset --hard origin/main
+            PEPSA_DEPLOY_ROOT="$deploy_root" PEPSA_PM2_ENV=production bash deploy/scripts/remote-deploy.sh
