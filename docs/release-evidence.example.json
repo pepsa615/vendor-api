@@ -1,0 +1,42 @@
+{
+  "schemaVersion": "1.0",
+  "releaseId": "vendor-admin-YYYYMMDD-N",
+  "deployLane": "staging",
+  "commits": {
+    "vendorServer": "",
+    "vendorFrontend": "",
+    "adminBackend": "",
+    "adminFrontend": "",
+    "payment": "",
+    "order": ""
+  },
+  "testReports": {
+    "contract": "",
+    "loadSoak": "",
+    "security": "",
+    "accessibility": "",
+    "backupRestore": "",
+    "outageRecovery": "",
+    "rollback": ""
+  },
+  "pilot": {
+    "cohortReference": "",
+    "windowStart": "",
+    "windowEnd": "",
+    "unexplainedVarianceMinor": null,
+    "duplicateProjectionCount": null,
+    "duplicateOrderSubmissionCount": null,
+    "crossTenantExposureCount": null,
+    "paymentDeliveryWithin60SecondsPercent": null,
+    "eventualProcessingOrExceptionPercent": null,
+    "feeSnapshotCoveragePercent": null,
+    "privilegedAuditCorrelationPercent": null
+  },
+  "signoffs": {
+    "product": null,
+    "finance": null,
+    "security": null,
+    "operations": null,
+    "engineering": null
+  }
+}

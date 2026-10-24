@@ -1,0 +1,42 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://contracts.pepsa.example/vendor/order-dispatch-event.v1.schema.json",
+  "title": "Pepsa Order Dispatch Event v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "eventId",
+    "schemaVersion",
+    "vendorId",
+    "vendorDispatchId",
+    "orderExecutionId",
+    "sequence",
+    "status",
+    "occurredAt",
+    "signingKeyId"
+  ],
+  "properties": {
+    "eventId": { "type": "string", "format": "uuid" },
+    "schemaVersion": { "const": "1.0" },
+    "vendorId": { "type": "string", "format": "uuid" },
+    "vendorDispatchId": { "type": "string", "format": "uuid" },
+    "orderExecutionId": { "type": "string", "minLength": 1 },
+    "sequence": { "type": "integer", "minimum": 1 },
+    "status": {
+      "enum": [
+        "PENDING_MATCH",
+        "PAIRED",
+        "PICKED_UP",
+        "DELIVERED",
+        "COMPLETED",
+        "FAILED_ATTEMPT",
+        "RTO_STARTED",
+        "RTO_COMPLETED",
+        "CANCELLED"
+      ]
+    },
+    "occurredAt": { "type": "string", "format": "date-time" },
+    "proofOfDeliveryRef": { "type": ["string", "null"] },
+    "signingKeyId": { "type": "string", "minLength": 1 }
+  }
+}

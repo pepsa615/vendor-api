@@ -1,0 +1,7 @@
+---
+description: Pepsa Vendor canonical engineering contract
+alwaysApply: true
+---
+Governance version: `2026.10.14-m0`
+Read and obey `AGENTS.md` and `.agents/skills/pepsa-vendor/SKILL.md`. Do not duplicate or override their rules.
+

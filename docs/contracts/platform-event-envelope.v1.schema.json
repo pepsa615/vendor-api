@@ -1,0 +1,49 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://contracts.pepsa.example/vendor/platform-event-envelope.v1.schema.json",
+  "title": "Pepsa Platform Event Envelope v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "eventId",
+    "eventType",
+    "schemaVersion",
+    "occurredAt",
+    "platformId",
+    "aggregateType",
+    "aggregateId",
+    "correlationId",
+    "signingKeyId",
+    "data"
+  ],
+  "properties": {
+    "eventId": { "type": "string", "format": "uuid" },
+    "eventType": {
+      "enum": [
+        "checkout.paid",
+        "checkout.expired",
+        "checkout.failed",
+        "wallet.provisioning.updated",
+        "wallet.credited",
+        "settlement.entry.created",
+        "settlement.entry.matured",
+        "settlement.withdrawn",
+        "commerce.debit.completed",
+        "commerce.debit.reversed"
+      ]
+    },
+    "schemaVersion": { "const": 1 },
+    "occurredAt": { "type": "string", "format": "date-time" },
+    "platformId": { "type": "string", "format": "uuid" },
+    "externalUserId": { "type": ["string", "null"] },
+    "aggregateType": { "type": "string", "minLength": 1 },
+    "aggregateId": { "type": "string", "minLength": 1 },
+    "correlationId": { "type": "string", "minLength": 1 },
+    "resourceId": { "type": ["string", "null"] },
+    "transactionId": { "type": ["string", "null"] },
+    "amount": { "type": ["string", "null"], "pattern": "^[0-9]+\\.[0-9]{2}$" },
+    "currency": { "type": ["string", "null"], "pattern": "^[A-Z]{3}$" },
+    "signingKeyId": { "type": "string", "minLength": 1 },
+    "data": { "type": "object" }
+  }
+}

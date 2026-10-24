@@ -1,0 +1,1129 @@
+generator client {
+  provider = "prisma-client"
+  output   = "../src/generated/prisma"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+enum VendorType {
+  INDIVIDUAL
+  COMPANY
+}
+
+enum VendorStatus {
+  EMAIL_PENDING
+  IN_PROGRESS
+  UNDER_REVIEW
+  APPROVED_PROVISIONING
+  APPROVED
+  REJECTED
+  SUSPENDED
+}
+
+enum PaymentProvisioningStatus {
+  PENDING
+  KYC_EXPORTING
+  PAYMENT_USER_CREATING
+  SVA_PROVISIONING
+  RECONCILING
+  ACTIVE
+  FAILED_RETRYABLE
+  MANUAL_REVIEW
+  SUSPENDED
+}
+
+enum FeeCode {
+  RUNWAY_DISPATCH
+  GENERAL_POOL_MARKUP
+  TRAVEL_MANIFEST
+  CUSTOMER_CHECKOUT_COMMISSION
+}
+
+enum FeePolicyScope {
+  PLATFORM_DEFAULT
+  VENDOR_OVERRIDE
+}
+
+enum FeeCalculationType {
+  FLAT
+  PERCENTAGE
+  TIERED
+}
+
+enum FeePolicyStatus {
+  DRAFT
+  PENDING_APPROVAL
+  SCHEDULED
+  ACTIVE
+  RETIRED
+}
+
+enum ReconciliationCaseStatus {
+  OPEN
+  RESOLVED
+}
+
+enum ReconciliationCaseSeverity {
+  WARNING
+  CRITICAL
+}
+
+enum UserStatus {
+  PENDING
+  ACTIVE
+  DISABLED
+}
+
+enum ChallengeType {
+  EMAIL_VERIFICATION
+  INVITATION
+  TRANSACTION_PIN_RESET
+}
+
+enum SettlementEntrySource {
+  RIDER_FULFILLED
+  CUSTOMER_LINK
+}
+
+enum SettlementEntryStatus {
+  PENDING
+  COMPLETED
+  FAILED
+}
+
+enum FeeReceivableStatus {
+  OUTSTANDING
+  COLLECTED
+  WAIVED
+}
+
+enum ApplicationStatus {
+  DRAFT
+  UNDER_REVIEW
+  APPROVED
+  REJECTED
+}
+
+enum DocumentStatus {
+  QUARANTINED
+  SCANNING
+  CLEAN
+  REJECTED
+}
+
+enum DocumentOwnerType {
+  INDIVIDUAL
+  BUSINESS
+  DIRECTOR
+}
+
+enum InvitationStatus {
+  PENDING
+  ACCEPTED
+  EXPIRED
+  REVOKED
+}
+
+enum DispatcherStatus {
+  DRAFT
+  UNDER_REVIEW
+  APPROVED
+  REJECTED
+  DISABLED
+}
+
+enum DispatcherRevisionStatus {
+  DRAFT
+  UNDER_REVIEW
+  APPROVED
+  REJECTED
+}
+
+enum OrderSource {
+  VENDOR_DIRECT
+  CUSTOMER_LINK
+}
+
+enum VendorOrderStatus {
+  DRAFT
+  READY
+  PENDING_PAYMENT
+  PENDING_ACCEPTANCE
+  ACCEPTED
+  CANCELLED
+}
+
+enum OrderPaymentStatus {
+  NOT_REQUIRED
+  PENDING
+  PAID
+  EXPIRED
+  FAILED
+}
+
+enum BatchStatus {
+  FINALIZED
+  MANIFESTED
+}
+
+enum ManifestStatus {
+  SENT
+  CHANGE_REQUESTED
+  DECLINED
+  ACCEPTED
+  IN_TRANSIT
+  REROUTED
+  REMOTE_LOCATION
+  DELIVERED
+}
+
+enum DispatchMode {
+  OWN_FLEET
+  GENERAL_POOL
+}
+
+enum DispatchStatus {
+  PENDING_MATCH
+  PAIRED
+  PICKED_UP
+  DELIVERED
+  COMPLETED
+  CANCELLED
+}
+
+model Vendor {
+  id                     String                    @id @default(uuid()) @db.Uuid
+  type                   VendorType
+  status                 VendorStatus              @default(EMAIL_PENDING)
+  businessName           String
+  email                  String                    @unique
+  phone                  String
+  publicSlug             String                    @unique @default(uuid())
+  externalCheckoutUserId String?                   @unique @db.Uuid
+  paymentWalletId        String?                   @unique @db.Uuid
+  paymentSettlementId    String?                   @unique @db.Uuid
+  paymentProvisioning    PaymentProvisioningStatus @default(PENDING)
+  dispatchCreationFrozen Boolean                   @default(false)
+  tagline                String?                   @db.VarChar(36)
+  description            String?                   @db.VarChar(96)
+  logoObjectKey          String?
+  rejectionNotes         Json?
+  createdAt              DateTime                  @default(now())
+  updatedAt              DateTime                  @updatedAt
+  users                  User[]
+  applications           OnboardingApplication[]
+  roles                  Role[]
+  invitations            Invitation[]
+  auditEvents            AuditEvent[]
+  customers              Customer[]
+  dispatchers            Dispatcher[]
+  pricingSettings        PricingSetting[]
+  orders                 Order[]
+  pricingQuotes          PricingQuote[]
+  batches                Batch[]                   @relation("BatchVendor")
+  outboundManifests      Manifest[]                @relation("ManifestOrigin")
+  inboundManifests       Manifest[]                @relation("ManifestDestination")
+  dispatches             Dispatch[]
+  settlementEntries      VendorSettlementEntry[]
+  feeReceivables         FeeReceivable[]
+  notifications          Notification[]
+  provisioningSagas      VendorProvisioningSaga[]
+  feePolicyOverrides     FeePolicyVersion[]
+  reconciliationCases    ReconciliationCase[]
+
+  @@map("vendors")
+}
+
+model VendorProvisioningSaga {
+  id                  String                    @id @default(uuid()) @db.Uuid
+  tenantId            String                    @db.Uuid
+  applicationId       String                    @unique @db.Uuid
+  status              PaymentProvisioningStatus @default(PENDING)
+  attempts            Int                       @default(0)
+  nextAttemptAt       DateTime?
+  leaseExpiresAt      DateTime?
+  lastErrorCode       String?
+  lastRequestId       String?
+  approvedKycSnapshot Json
+  createdAt           DateTime                  @default(now())
+  updatedAt           DateTime                  @updatedAt
+  completedAt         DateTime?
+  vendor              Vendor                    @relation(fields: [tenantId], references: [id], onDelete: Restrict)
+
+  @@index([status, nextAttemptAt])
+  @@index([leaseExpiresAt])
+  @@map("vendor_provisioning_sagas")
+}
+
+model InternalAdminActorNonce {
+  jti       String   @id
+  expiresAt DateTime
+  createdAt DateTime @default(now())
+
+  @@index([expiresAt])
+  @@map("internal_admin_actor_nonces")
+}
+
+model FeePolicyVersion {
+  id                 String             @id @default(uuid()) @db.Uuid
+  feeCode            FeeCode
+  scope              FeePolicyScope
+  tenantId           String?            @db.Uuid
+  version            Int
+  calculationType    FeeCalculationType
+  currency           String             @default("NGN") @db.Char(3)
+  flatAmountMinor    Int?
+  percentageBps      Int?
+  minimumAmountMinor Int?
+  maximumAmountMinor Int?
+  tiers              Json?
+  roundingRule       String             @default("HALF_UP")
+  deferralAllowed    Boolean            @default(false)
+  status             FeePolicyStatus    @default(DRAFT)
+  effectiveFrom      DateTime?
+  effectiveTo        DateTime?
+  createdById        String
+  approvedById       String?
+  approvalReference  String?
+  reason             String
+  contentHash        String
+  createdAt          DateTime           @default(now())
+  updatedAt          DateTime           @updatedAt
+  vendor             Vendor?            @relation(fields: [tenantId], references: [id], onDelete: Restrict)
+  dispatches         Dispatch[]
+
+  @@unique([feeCode, scope, tenantId, version])
+  @@index([feeCode, scope, tenantId, status, effectiveFrom])
+  @@map("fee_policy_versions")
+}
+
+model PricingSetting {
+  id              String         @id @default(uuid()) @db.Uuid
+  tenantId        String         @db.Uuid
+  version         Int
+  pricePerKmMinor Int
+  currency        String         @default("NGN")
+  active          Boolean        @default(true)
+  createdById     String
+  createdAt       DateTime       @default(now())
+  vendor          Vendor         @relation(fields: [tenantId], references: [id], onDelete: Restrict)
+  tiers           DiscountTier[]
+  quotes          PricingQuote[]
+
+  @@unique([tenantId, version])
+  @@index([tenantId, active])
+  @@map("pricing_settings")
+}
+
+model DiscountTier {
+  id               String         @id @default(uuid()) @db.Uuid
+  pricingSettingId String         @db.Uuid
+  tierNumber       Int
+  minMetres        Int
+  maxMetres        Int
+  discountBps      Int
+  pricingSetting   PricingSetting @relation(fields: [pricingSettingId], references: [id], onDelete: Restrict)
+
+  @@unique([pricingSettingId, tierNumber])
+  @@map("discount_tiers")
+}
+
+model PricingQuote {
+  id               String         @id @default(uuid()) @db.Uuid
+  tenantId         String         @db.Uuid
+  pricingSettingId String         @db.Uuid
+  publicReference  String         @unique
+  pickup           Json
+  delivery         Json
+  distanceMetres   Int
+  durationSeconds  Int
+  pricePerKmMinor  Int
+  discountBps      Int
+  baseAmountMinor  Int
+  finalAmountMinor Int
+  currency         String         @default("NGN")
+  expiresAt        DateTime
+  consumedAt       DateTime?
+  createdAt        DateTime       @default(now())
+  vendor           Vendor         @relation(fields: [tenantId], references: [id], onDelete: Restrict)
+  pricingSetting   PricingSetting @relation(fields: [pricingSettingId], references: [id], onDelete: Restrict)
+  order            Order?
+
+  @@index([tenantId, expiresAt])
+  @@map("pricing_quotes")
+}
+
+model Order {
+  id              String                 @id @default(uuid()) @db.Uuid
+  tenantId        String                 @db.Uuid
+  publicReference String                 @unique
+  source          OrderSource
+  status          VendorOrderStatus
+  paymentStatus   OrderPaymentStatus
+  customerId      String?                @db.Uuid
+  quoteId         String?                @unique @db.Uuid
+  sender          Json
+  receiver        Json
+  pickup          Json
+  delivery        Json
+  orderType       String
+  handling        String
+  mobilityMethod  String?
+  parcelMetadata  Json
+  itemDescription String
+  deliveryStatus  String
+  scheduledStart  DateTime?
+  scheduledEnd    DateTime?
+  fragile         Boolean                @default(false)
+  sizeEstimate    String?
+  distanceMetres  Int?
+  durationSeconds Int?
+  amountMinor     Int?
+  currency        String                 @default("NGN")
+  createdById     String?
+  acceptedAt      DateTime?
+  cancelledAt     DateTime?
+  createdAt       DateTime               @default(now())
+  updatedAt       DateTime               @updatedAt
+  vendor          Vendor                 @relation(fields: [tenantId], references: [id], onDelete: Restrict)
+  customer        Customer?              @relation(fields: [customerId], references: [id], onDelete: SetNull)
+  quote           PricingQuote?          @relation(fields: [quoteId], references: [id], onDelete: Restrict)
+  checkout        CheckoutSession?
+  batchItem       BatchItem?
+  manifestItems   ManifestRevisionItem[]
+  dispatchItems   DispatchItem[]
+
+  @@index([tenantId, source, status, createdAt])
+  @@map("orders")
+}
+
+model Batch {
+  id              String                 @id @default(uuid()) @db.Uuid
+  tenantId        String                 @db.Uuid
+  publicReference String                 @unique
+  status          BatchStatus            @default(FINALIZED)
+  createdById     String
+  createdAt       DateTime               @default(now())
+  manifestedAt    DateTime?
+  vendor          Vendor                 @relation("BatchVendor", fields: [tenantId], references: [id], onDelete: Restrict)
+  items           BatchItem[]
+  manifestItems   ManifestRevisionItem[]
+  dispatch        Dispatch?
+
+  @@index([tenantId, createdAt])
+  @@map("batches")
+}
+
+model BatchItem {
+  batchId String @db.Uuid
+  orderId String @unique @db.Uuid
+  batch   Batch  @relation(fields: [batchId], references: [id], onDelete: Restrict)
+  order   Order  @relation(fields: [orderId], references: [id], onDelete: Restrict)
+
+  @@id([batchId, orderId])
+  @@map("batch_items")
+}
+
+model Manifest {
+  id                  String             @id @default(uuid()) @db.Uuid
+  publicReference     String             @unique
+  waybillNumber       String             @unique
+  originTenantId      String             @db.Uuid
+  destinationTenantId String             @db.Uuid
+  status              ManifestStatus     @default(SENT)
+  currentVersion      Int                @default(1)
+  createdById         String
+  createdAt           DateTime           @default(now())
+  updatedAt           DateTime           @updatedAt
+  originVendor        Vendor             @relation("ManifestOrigin", fields: [originTenantId], references: [id], onDelete: Restrict)
+  destinationVendor   Vendor             @relation("ManifestDestination", fields: [destinationTenantId], references: [id], onDelete: Restrict)
+  revisions           ManifestRevision[]
+  actions             ManifestAction[]
+
+  @@index([originTenantId, createdAt])
+  @@index([destinationTenantId, createdAt])
+  @@map("manifests")
+}
+
+model ManifestRevision {
+  id               String                 @id @default(uuid()) @db.Uuid
+  manifestId       String                 @db.Uuid
+  version          Int
+  name             String
+  originState      String
+  originCity       String
+  destinationState String
+  destinationCity  String
+  createdById      String
+  createdAt        DateTime               @default(now())
+  manifest         Manifest               @relation(fields: [manifestId], references: [id], onDelete: Restrict)
+  items            ManifestRevisionItem[]
+
+  @@unique([manifestId, version])
+  @@map("manifest_revisions")
+}
+
+model ManifestRevisionItem {
+  id         String           @id @default(uuid()) @db.Uuid
+  revisionId String           @db.Uuid
+  orderId    String?          @db.Uuid
+  batchId    String?          @db.Uuid
+  revision   ManifestRevision @relation(fields: [revisionId], references: [id], onDelete: Restrict)
+  order      Order?           @relation(fields: [orderId], references: [id], onDelete: Restrict)
+  batch      Batch?           @relation(fields: [batchId], references: [id], onDelete: Restrict)
+
+  @@unique([revisionId, orderId])
+  @@unique([revisionId, batchId])
+  @@map("manifest_revision_items")
+}
+
+model ManifestAction {
+  id            String          @id @default(uuid()) @db.Uuid
+  manifestId    String          @db.Uuid
+  actorId       String
+  actorTenantId String          @db.Uuid
+  action        String
+  fromStatus    ManifestStatus?
+  toStatus      ManifestStatus
+  message       String?
+  createdAt     DateTime        @default(now())
+  manifest      Manifest        @relation(fields: [manifestId], references: [id], onDelete: Restrict)
+
+  @@index([manifestId, createdAt])
+  @@map("manifest_actions")
+}
+
+model ManifestPreview {
+  id         String    @id @default(uuid()) @db.Uuid
+  tokenHash  String    @unique
+  tenantId   String    @db.Uuid
+  actorId    String
+  kind       String
+  payload    Json
+  expiresAt  DateTime
+  consumedAt DateTime?
+  createdAt  DateTime  @default(now())
+
+  @@index([tenantId, expiresAt])
+  @@map("manifest_previews")
+}
+
+model CheckoutSession {
+  id                   String   @id @default(uuid()) @db.Uuid
+  orderId              String   @unique @db.Uuid
+  providerCheckoutId   String   @unique
+  providerReference    String?
+  dynamicAccountNumber String
+  bankName             String
+  expiresAt            DateTime
+  createdAt            DateTime @default(now())
+  order                Order    @relation(fields: [orderId], references: [id], onDelete: Restrict)
+
+  @@map("checkout_sessions")
+}
+
+model PaymentWebhookEvent {
+  id          String    @id @default(uuid()) @db.Uuid
+  eventId     String    @unique
+  eventType   String
+  payloadHash String
+  processedAt DateTime?
+  createdAt   DateTime  @default(now())
+
+  @@map("payment_webhook_events")
+}
+
+model ReconciliationCase {
+  id               String                     @id @default(uuid()) @db.Uuid
+  tenantId         String                     @db.Uuid
+  category         String
+  severity         ReconciliationCaseSeverity
+  status           ReconciliationCaseStatus   @default(OPEN)
+  sourceSystem     String
+  sourceReference  String
+  subjectType      String
+  subjectId        String
+  summary          String
+  expectedSnapshot Json?
+  actualSnapshot   Json?
+  requestId        String?
+  resolvedById     String?
+  resolutionReason String?
+  createdAt        DateTime                   @default(now())
+  updatedAt        DateTime                   @updatedAt
+  resolvedAt       DateTime?
+  vendor           Vendor                     @relation(fields: [tenantId], references: [id], onDelete: Restrict)
+
+  @@unique([category, sourceReference, subjectId])
+  @@index([tenantId, status, severity, createdAt])
+  @@map("reconciliation_cases")
+}
+
+model Customer {
+  id        String   @id @default(uuid()) @db.Uuid
+  tenantId  String   @db.Uuid
+  name      String
+  phone     String
+  email     String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  vendor    Vendor   @relation(fields: [tenantId], references: [id], onDelete: Restrict)
+  orders    Order[]
+
+  @@unique([tenantId, phone])
+  @@index([tenantId, createdAt])
+  @@map("customers")
+}
+
+model Dispatcher {
+  id                 String               @id @default(uuid()) @db.Uuid
+  tenantId           String               @db.Uuid
+  status             DispatcherStatus     @default(DRAFT)
+  availability       Boolean              @default(false)
+  approvedRevisionId String?              @unique @db.Uuid
+  latestRevisionId   String?              @unique @db.Uuid
+  totalOrdersPicked  Int                  @default(0)
+  createdAt          DateTime             @default(now())
+  updatedAt          DateTime             @updatedAt
+  vendor             Vendor               @relation(fields: [tenantId], references: [id], onDelete: Restrict)
+  revisions          DispatcherRevision[] @relation("DispatcherRevisions")
+  approvedRevision   DispatcherRevision?  @relation("ApprovedDispatcherRevision", fields: [approvedRevisionId], references: [id], onDelete: SetNull)
+  latestRevision     DispatcherRevision?  @relation("LatestDispatcherRevision", fields: [latestRevisionId], references: [id], onDelete: SetNull)
+  dispatches         Dispatch[]
+
+  @@index([tenantId, status])
+  @@index([tenantId, availability])
+  @@map("dispatchers")
+}
+
+model Dispatch {
+  id                       String                  @id @default(uuid()) @db.Uuid
+  publicReference          String                  @unique
+  tenantId                 String                  @db.Uuid
+  mode                     DispatchMode
+  status                   DispatchStatus          @default(PENDING_MATCH)
+  batchId                  String?                 @unique @db.Uuid
+  dispatcherId             String?                 @db.Uuid
+  providerReference        String?                 @unique
+  currency                 String                  @default("NGN")
+  revenueShareBps          Int?
+  payoutAmountMinor        Int?
+  feeAmountMinor           Int                     @default(0)
+  feePolicyVersionId       String?                 @db.Uuid
+  feePolicySnapshot        Json?
+  fundingRequiredMinor     Int                     @default(0)
+  optimizedDistanceMetres  Int
+  optimizedDurationSeconds Int
+  routeSnapshot            Json
+  createdById              String
+  createdAt                DateTime                @default(now())
+  pairedAt                 DateTime?
+  pickedUpAt               DateTime?
+  deliveredAt              DateTime?
+  completedAt              DateTime?
+  cancelledAt              DateTime?
+  version                  Int                     @default(1)
+  vendor                   Vendor                  @relation(fields: [tenantId], references: [id], onDelete: Restrict)
+  batch                    Batch?                  @relation(fields: [batchId], references: [id], onDelete: Restrict)
+  dispatcher               Dispatcher?             @relation(fields: [dispatcherId], references: [id], onDelete: Restrict)
+  feePolicyVersion         FeePolicyVersion?       @relation(fields: [feePolicyVersionId], references: [id], onDelete: Restrict)
+  items                    DispatchItem[]
+  events                   DispatchEvent[]
+  trackingPoints           DispatchTrackingPoint[]
+
+  @@index([tenantId, status, createdAt])
+  @@index([dispatcherId, status])
+  @@map("dispatches")
+}
+
+model DispatchItem {
+  id                String   @id @default(uuid()) @db.Uuid
+  dispatchId        String   @db.Uuid
+  orderId           String   @db.Uuid
+  stopSequence      Int
+  payoutAmountMinor Int?
+  dispatch          Dispatch @relation(fields: [dispatchId], references: [id], onDelete: Restrict)
+  order             Order    @relation(fields: [orderId], references: [id], onDelete: Restrict)
+
+  @@unique([dispatchId, orderId])
+  @@unique([orderId])
+  @@unique([dispatchId, stopSequence])
+  @@map("dispatch_items")
+}
+
+model DispatchEvent {
+  id         String          @id @default(uuid()) @db.Uuid
+  dispatchId String          @db.Uuid
+  actorId    String
+  fromStatus DispatchStatus?
+  toStatus   DispatchStatus
+  source     String
+  message    String?
+  createdAt  DateTime        @default(now())
+  dispatch   Dispatch        @relation(fields: [dispatchId], references: [id], onDelete: Restrict)
+
+  @@index([dispatchId, createdAt])
+  @@map("dispatch_events")
+}
+
+model DispatchTrackingPoint {
+  id         String   @id @default(uuid()) @db.Uuid
+  dispatchId String   @db.Uuid
+  latitude   Decimal  @db.Decimal(9, 6)
+  longitude  Decimal  @db.Decimal(9, 6)
+  recordedAt DateTime
+  createdAt  DateTime @default(now())
+  dispatch   Dispatch @relation(fields: [dispatchId], references: [id], onDelete: Restrict)
+
+  @@index([dispatchId, recordedAt])
+  @@map("dispatch_tracking_points")
+}
+
+model DispatchPreview {
+  id         String    @id @default(uuid()) @db.Uuid
+  tokenHash  String    @unique
+  tenantId   String    @db.Uuid
+  actorId    String
+  payload    Json
+  expiresAt  DateTime
+  consumedAt DateTime?
+  createdAt  DateTime  @default(now())
+
+  @@index([tenantId, expiresAt])
+  @@map("dispatch_previews")
+}
+
+model DispatchProviderEvent {
+  id          String    @id @default(uuid()) @db.Uuid
+  eventId     String    @unique
+  payloadHash String
+  occurredAt  DateTime
+  processedAt DateTime?
+  createdAt   DateTime  @default(now())
+
+  @@map("dispatch_provider_events")
+}
+
+model DispatcherRevision {
+  id                      String                   @id @default(uuid()) @db.Uuid
+  dispatcherId            String                   @db.Uuid
+  version                 Int
+  status                  DispatcherRevisionStatus @default(DRAFT)
+  firstName               String
+  lastName                String
+  email                   String
+  phone                   String
+  dateOfBirth             DateTime
+  gender                  String
+  identityType            String
+  encryptedIdentityNo     String
+  identityFingerprint     String
+  identityExpiry          DateTime?
+  homeAddress             String
+  state                   String
+  city                    String
+  termsAcceptedAt         DateTime
+  engagementType          String
+  vehicleType             String
+  vehicleBrand            String?
+  plateNumber             String?
+  vehicleRegistrationDate DateTime
+  guarantorName           String
+  guarantorPhone          String
+  guarantorEmail          String?
+  guarantorAddress        String?
+  revenueSharePct         Decimal                  @db.Decimal(5, 2)
+  submittedAt             DateTime?
+  decidedAt               DateTime?
+  decisionReason          String?
+  correctionFields        String[]                 @default([])
+  createdAt               DateTime                 @default(now())
+  updatedAt               DateTime                 @updatedAt
+  dispatcher              Dispatcher               @relation("DispatcherRevisions", fields: [dispatcherId], references: [id], onDelete: Cascade)
+  approvedFor             Dispatcher?              @relation("ApprovedDispatcherRevision")
+  latestFor               Dispatcher?              @relation("LatestDispatcherRevision")
+  documents               DispatcherDocument[]
+
+  @@unique([dispatcherId, version])
+  @@index([status, submittedAt])
+  @@map("dispatcher_revisions")
+}
+
+model DispatcherDocument {
+  id           String             @id @default(uuid()) @db.Uuid
+  revisionId   String             @db.Uuid
+  documentType String
+  objectKey    String
+  originalName String
+  mimeType     String
+  sizeBytes    Int
+  checksum     String
+  status       DocumentStatus     @default(QUARANTINED)
+  scanMessage  String?
+  createdAt    DateTime           @default(now())
+  scannedAt    DateTime?
+  revision     DispatcherRevision @relation(fields: [revisionId], references: [id], onDelete: Cascade)
+
+  @@index([revisionId, documentType])
+  @@map("dispatcher_documents")
+}
+
+model User {
+  id                  String                    @id @default(uuid()) @db.Uuid
+  tenantId            String                    @db.Uuid
+  email               String
+  normalizedEmail     String                    @unique
+  firstName           String
+  lastName            String
+  phone               String
+  passwordHash        String
+  transactionPinHash  String?
+  pinFailedAttempts   Int                       @default(0)
+  pinLockedUntil      DateTime?
+  status              UserStatus                @default(PENDING)
+  emailVerifiedAt     DateTime?
+  tokenVersion        Int                       @default(0)
+  createdAt           DateTime                  @default(now())
+  updatedAt           DateTime                  @updatedAt
+  vendor              Vendor                    @relation(fields: [tenantId], references: [id], onDelete: Restrict)
+  sessions            Session[]
+  challenges          AuthChallenge[]
+  roleAssignments     UserRole[]
+  createdApplications OnboardingApplication[]   @relation("ApplicationCreator")
+  invitationsSent     Invitation[]              @relation("InvitationSender")
+  pinChallenges       TransactionPinChallenge[]
+  notifications       Notification[]
+
+  @@index([tenantId, status])
+  @@map("users")
+}
+
+model TransactionPinChallenge {
+  id         String    @id @default(uuid()) @db.Uuid
+  userId     String    @db.Uuid
+  tenantId   String    @db.Uuid
+  tokenHash  String    @unique
+  purpose    String
+  expiresAt  DateTime
+  consumedAt DateTime?
+  createdAt  DateTime  @default(now())
+  user       User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, purpose, expiresAt])
+  @@map("transaction_pin_challenges")
+}
+
+model VendorSettlementEntry {
+  id               String                @id @default(uuid()) @db.Uuid
+  tenantId         String                @db.Uuid
+  source           SettlementEntrySource
+  sourceReference  String
+  counterpartyId   String?
+  counterpartyName String?
+  totalAmountMinor Int
+  earningsMinor    Int
+  currency         String                @default("NGN")
+  status           SettlementEntryStatus @default(PENDING)
+  paymentReference String?
+  createdAt        DateTime              @default(now())
+  completedAt      DateTime?
+  vendor           Vendor                @relation(fields: [tenantId], references: [id], onDelete: Restrict)
+
+  @@unique([tenantId, source, sourceReference])
+  @@index([tenantId, status, createdAt])
+  @@map("vendor_settlement_entries")
+}
+
+model FeeReceivable {
+  id               String              @id @default(uuid()) @db.Uuid
+  tenantId         String              @db.Uuid
+  dispatchId       String              @unique @db.Uuid
+  amountMinor      Int
+  collectedMinor   Int                 @default(0)
+  currency         String              @default("NGN")
+  status           FeeReceivableStatus @default(OUTSTANDING)
+  paymentReference String?
+  createdAt        DateTime            @default(now())
+  collectedAt      DateTime?
+  vendor           Vendor              @relation(fields: [tenantId], references: [id], onDelete: Restrict)
+
+  @@index([tenantId, status, createdAt])
+  @@map("fee_receivables")
+}
+
+model FeeAssessment {
+  id                   String   @id @default(uuid()) @db.Uuid
+  tenantId             String   @db.Uuid
+  feeCode              FeeCode
+  sourceType           String
+  sourceReference      String
+  policyVersionId      String?  @db.Uuid
+  policySnapshot       Json
+  assessedAmountMinor  Int
+  collectedAmountMinor Int      @default(0)
+  adjustedAmountMinor  Int      @default(0)
+  currency             String   @default("NGN") @db.Char(3)
+  createdAt            DateTime @default(now())
+
+  @@unique([tenantId, feeCode, sourceType, sourceReference])
+  @@index([tenantId, createdAt])
+  @@map("fee_assessments")
+}
+
+model FeeCollectionPortion {
+  id                   String   @id @default(uuid()) @db.Uuid
+  tenantId             String   @db.Uuid
+  assessmentId         String?  @db.Uuid
+  receivableId         String?  @db.Uuid
+  sequence             Int
+  amountMinor          Int
+  currency             String   @default("NGN") @db.Char(3)
+  paymentTransactionId String
+  idempotencyKey       String   @unique
+  createdAt            DateTime @default(now())
+
+  @@unique([receivableId, sequence])
+  @@index([assessmentId, createdAt])
+  @@index([tenantId, createdAt])
+  @@map("fee_collection_portions")
+}
+
+model FeeAdjustment {
+  id                String   @id @default(uuid()) @db.Uuid
+  assessmentId      String   @db.Uuid
+  tenantId          String   @db.Uuid
+  amountMinor       Int
+  currency          String   @default("NGN") @db.Char(3)
+  kind              String
+  reason            String
+  approvalReference String
+  paymentReference  String?
+  createdById       String
+  createdAt         DateTime @default(now())
+
+  @@index([assessmentId, createdAt])
+  @@index([tenantId, createdAt])
+  @@map("fee_adjustments")
+}
+
+model Session {
+  id               String    @id @default(uuid()) @db.Uuid
+  userId           String    @db.Uuid
+  refreshTokenHash String    @unique
+  expiresAt        DateTime
+  revokedAt        DateTime?
+  replacedById     String?   @db.Uuid
+  createdAt        DateTime  @default(now())
+  lastUsedAt       DateTime  @default(now())
+  user             User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, expiresAt])
+  @@map("sessions")
+}
+
+model AuthChallenge {
+  id         String        @id @default(uuid()) @db.Uuid
+  userId     String        @db.Uuid
+  type       ChallengeType
+  tokenHash  String        @unique
+  attempts   Int           @default(0)
+  expiresAt  DateTime
+  consumedAt DateTime?
+  createdAt  DateTime      @default(now())
+  user       User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, type, expiresAt])
+  @@map("auth_challenges")
+}
+
+model OnboardingApplication {
+  id               String            @id @default(uuid()) @db.Uuid
+  tenantId         String            @db.Uuid
+  createdById      String            @db.Uuid
+  version          Int               @default(1)
+  status           ApplicationStatus @default(DRAFT)
+  personalData     Json?
+  businessData     Json?
+  submittedAt      DateTime?
+  decidedAt        DateTime?
+  decisionReason   String?
+  correctionFields String[]          @default([])
+  createdAt        DateTime          @default(now())
+  updatedAt        DateTime          @updatedAt
+  vendor           Vendor            @relation(fields: [tenantId], references: [id], onDelete: Restrict)
+  createdBy        User              @relation("ApplicationCreator", fields: [createdById], references: [id], onDelete: Restrict)
+  directors        Director[]
+  documents        KycDocument[]
+
+  @@unique([tenantId, version])
+  @@index([status, submittedAt])
+  @@map("onboarding_applications")
+}
+
+model Director {
+  id                  String                @id @default(uuid()) @db.Uuid
+  applicationId       String                @db.Uuid
+  firstName           String
+  lastName            String
+  gender              String
+  dateOfBirth         DateTime
+  encryptedIdentityNo String
+  identityFingerprint String
+  encryptedBvn        String?
+  phone               String
+  homeAddress         String
+  state               String
+  city                String
+  role                String
+  ownershipShare      Decimal               @db.Decimal(5, 2)
+  createdAt           DateTime              @default(now())
+  updatedAt           DateTime              @updatedAt
+  application         OnboardingApplication @relation(fields: [applicationId], references: [id], onDelete: Cascade)
+
+  @@index([applicationId])
+  @@map("directors")
+}
+
+model KycDocument {
+  id            String                @id @default(uuid()) @db.Uuid
+  applicationId String                @db.Uuid
+  ownerType     DocumentOwnerType
+  ownerId       String?
+  documentType  String
+  objectKey     String
+  originalName  String
+  mimeType      String
+  sizeBytes     Int
+  checksum      String
+  status        DocumentStatus        @default(QUARANTINED)
+  scanMessage   String?
+  createdAt     DateTime              @default(now())
+  scannedAt     DateTime?
+  application   OnboardingApplication @relation(fields: [applicationId], references: [id], onDelete: Cascade)
+
+  @@index([applicationId, ownerType, ownerId])
+  @@map("kyc_documents")
+}
+
+model Role {
+  id          String       @id @default(uuid()) @db.Uuid
+  tenantId    String       @db.Uuid
+  name        String
+  description String?
+  permissions String[]     @default([])
+  isOwner     Boolean      @default(false)
+  createdAt   DateTime     @default(now())
+  updatedAt   DateTime     @updatedAt
+  vendor      Vendor       @relation(fields: [tenantId], references: [id], onDelete: Restrict)
+  assignments UserRole[]
+  invitations Invitation[]
+
+  @@unique([tenantId, name])
+  @@index([tenantId])
+  @@map("roles")
+}
+
+model UserRole {
+  userId     String   @db.Uuid
+  roleId     String   @db.Uuid
+  assignedAt DateTime @default(now())
+  user       User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  role       Role     @relation(fields: [roleId], references: [id], onDelete: Restrict)
+
+  @@id([userId, roleId])
+  @@map("user_roles")
+}
+
+model Invitation {
+  id              String           @id @default(uuid()) @db.Uuid
+  tenantId        String           @db.Uuid
+  roleId          String           @db.Uuid
+  invitedById     String           @db.Uuid
+  email           String
+  normalizedEmail String
+  tokenHash       String           @unique
+  status          InvitationStatus @default(PENDING)
+  expiresAt       DateTime
+  acceptedAt      DateTime?
+  createdAt       DateTime         @default(now())
+  vendor          Vendor           @relation(fields: [tenantId], references: [id], onDelete: Restrict)
+  role            Role             @relation(fields: [roleId], references: [id], onDelete: Restrict)
+  invitedBy       User             @relation("InvitationSender", fields: [invitedById], references: [id], onDelete: Restrict)
+
+  @@index([tenantId, status])
+  @@index([normalizedEmail])
+  @@map("invitations")
+}
+
+model EmailOutbox {
+  id            String    @id @default(uuid()) @db.Uuid
+  recipient     String
+  template      String
+  payload       Json
+  attempts      Int       @default(0)
+  nextAttemptAt DateTime  @default(now())
+  sentAt        DateTime?
+  lastError     String?
+  uniqueKey     String?   @unique
+  claimedAt     DateTime?
+  failedAt      DateTime?
+  createdAt     DateTime  @default(now())
+
+  @@index([sentAt, nextAttemptAt])
+  @@map("email_outbox")
+}
+
+model Notification {
+  id        String    @id @default(uuid()) @db.Uuid
+  tenantId  String    @db.Uuid
+  userId    String    @db.Uuid
+  type      String
+  title     String
+  body      String
+  href      String?
+  uniqueKey String
+  readAt    DateTime?
+  createdAt DateTime  @default(now())
+  vendor    Vendor    @relation(fields: [tenantId], references: [id], onDelete: Restrict)
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, uniqueKey])
+  @@index([userId, readAt, createdAt])
+  @@index([tenantId, createdAt])
+  @@map("notifications")
+}
+
+model AuditEvent {
+  id        String   @id @default(uuid()) @db.Uuid
+  tenantId  String?  @db.Uuid
+  actorId   String
+  action    String
+  subjectId String?
+  requestId String?
+  outcome   String   @default("SUCCESS")
+  metadata  Json?
+  createdAt DateTime @default(now())
+  vendor    Vendor?  @relation(fields: [tenantId], references: [id], onDelete: Restrict)
+
+  @@index([tenantId, createdAt])
+  @@index([action, createdAt])
+  @@map("audit_events")
+}
+
+model IdempotencyRecord {
+  id             String   @id @default(uuid()) @db.Uuid
+  scope          String
+  key            String
+  actorId        String
+  requestHash    String
+  responseStatus Int
+  responseBody   Json
+  createdAt      DateTime @default(now())
+  expiresAt      DateTime
+
+  @@unique([scope, key])
+  @@index([expiresAt])
+  @@map("idempotency_records")
+}

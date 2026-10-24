@@ -1,0 +1,48 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://contracts.pepsa.example/vendor/rider-provider-event.v1.schema.json",
+  "title": "Vendor Rider Provider Event v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "eventId",
+    "schemaVersion",
+    "vendorId",
+    "dispatchId",
+    "sequence",
+    "type",
+    "occurredAt",
+    "signingKeyId"
+  ],
+  "properties": {
+    "eventId": { "type": "string", "format": "uuid" },
+    "schemaVersion": { "const": "1.0" },
+    "vendorId": { "type": "string", "format": "uuid" },
+    "dispatchId": { "type": "string", "format": "uuid" },
+    "riderId": { "type": ["string", "null"] },
+    "sequence": { "type": "integer", "minimum": 1 },
+    "type": {
+      "enum": [
+        "OFFERED",
+        "ACCEPTED",
+        "PICKED_UP",
+        "PROGRESS",
+        "POD_CAPTURED",
+        "FAILED_ATTEMPT",
+        "CANCELLED",
+        "RTO_STARTED",
+        "RTO_COMPLETED",
+        "LOCATION_RECORDED"
+      ]
+    },
+    "occurredAt": { "type": "string", "format": "date-time" },
+    "proofOfDeliveryRef": { "type": ["string", "null"], "maxLength": 500 },
+    "failureReasonCode": { "type": ["string", "null"], "maxLength": 80 },
+    "offlineRecordedAt": { "type": ["string", "null"], "format": "date-time" },
+    "locationConsentReference": {
+      "type": ["string", "null"],
+      "maxLength": 200
+    },
+    "signingKeyId": { "type": "string", "minLength": 1 }
+  }
+}
