@@ -25,6 +25,12 @@ jobs:
       group: deploy-vendor-server-staging
       cancel-in-progress: false
     steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Block malicious and obfuscated code
+        run: bash scripts/check-malicious-code.sh
+
       - name: Deploy vendor server to staging
         uses: appleboy/ssh-action@v1.2.0
         with:
@@ -52,6 +58,12 @@ jobs:
       group: deploy-vendor-server-production
       cancel-in-progress: false
     steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Block malicious and obfuscated code
+        run: bash scripts/check-malicious-code.sh
+
       - name: Deploy vendor server to production
         uses: appleboy/ssh-action@v1.2.0
         with:
