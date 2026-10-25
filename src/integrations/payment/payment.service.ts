@@ -2,6 +2,7 @@ import {
   BadGatewayException,
   HttpException,
   Injectable,
+  Logger,
   ServiceUnavailableException,
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
@@ -9,6 +10,8 @@ import { createHash } from 'node:crypto';
 
 @Injectable()
 export class PaymentService {
+  private readonly logger = new Logger(PaymentService.name);
+
   constructor(private readonly config: ConfigService) {}
 
   private async request<T>(path: string, init: RequestInit = {}): Promise<T> {
@@ -202,6 +205,7 @@ export class PaymentService {
           method: 'POST',
           headers: {
             'content-type': 'application/json',
+            'x-api-key': key,
             'x-platform-api-key': key,
             'idempotency-key': input.idempotencyKey,
           },
@@ -216,7 +220,10 @@ export class PaymentService {
           ),
         },
       );
-      if (!response.ok) throw new Error(`Payment HTTP ${response.status}`);
+      if (!response.ok) {
+        const errorText = await response.text().catch(() => '');
+        throw new Error(`Payment HTTP ${response.status}: ${errorText}`);
+      }
       const body = (await response.json()) as any;
       if (!body.checkout_id || !body.dynamic_account_number || !body.expires_at)
         throw new Error('Invalid payment response');
@@ -229,7 +236,10 @@ export class PaymentService {
         bankName: String(body.bank_name ?? '9PSB'),
         expiresAt: new Date(body.expires_at),
       };
-    } catch {
+    } catch (err) {
+      this.logger.error(
+        `Checkout provider call failed: ${err instanceof Error ? err.message : String(err)}`,
+      );
       throw new BadGatewayException('Checkout provider is unavailable');
     }
   }

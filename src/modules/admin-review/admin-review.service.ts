@@ -39,7 +39,15 @@ export class AdminReviewService {
     const value = await this.db.onboardingApplication.findUnique({
       where: { id },
       include: {
-        vendor: true,
+        vendor: {
+          select: {
+            id: true,
+            type: true,
+            businessName: true,
+            email: true,
+            phone: true,
+          },
+        },
         directors: true,
         documents: {
           select: {
@@ -57,12 +65,56 @@ export class AdminReviewService {
       },
     });
     if (!value) throw new NotFoundException('Application not found');
+    const personal = (value.personalData ?? {}) as Record<string, unknown>;
+    const business = (value.businessData ?? {}) as Record<string, unknown>;
     return {
-      ...value,
-      directors: value.directors.map(
-        ({ encryptedIdentityNo: _, identityFingerprint: __, ...director }) =>
-          director,
-      ),
+      id: value.id,
+      tenantId: value.tenantId,
+      version: value.version,
+      status: value.status,
+      submittedAt: value.submittedAt,
+      createdAt: value.createdAt,
+      updatedAt: value.updatedAt,
+      vendor: value.vendor,
+      personalData: this.personalView(personal),
+      businessData: {
+        legalName: business.legalName,
+        registrationType: business.registrationType,
+        registrationDate: business.registrationDate,
+        registrationNumber: business.registrationNumber,
+        taxNumber: business.taxNumber,
+        registeredAddress: business.registeredAddress,
+        businessAddress: business.businessAddress,
+        state: business.state,
+        city: business.city,
+      },
+      directors: value.directors.map((director) => ({
+        id: director.id,
+        firstName: director.firstName,
+        lastName: director.lastName,
+        gender: director.gender,
+        dateOfBirth: director.dateOfBirth,
+        phone: director.phone,
+        homeAddress: director.homeAddress,
+        state: director.state,
+        city: director.city,
+        role: director.role,
+        ownershipShare: String(director.ownershipShare),
+      })),
+      documents: value.documents,
+    };
+  }
+
+  private personalView(value: Record<string, unknown>) {
+    return {
+      firstName: value.firstName,
+      lastName: value.lastName,
+      gender: value.gender,
+      dateOfBirth: value.dateOfBirth,
+      phone: value.phone,
+      homeAddress: value.homeAddress,
+      state: value.state,
+      city: value.city,
     };
   }
   async document(applicationId: string, documentId: string, actorId: string) {
@@ -181,7 +233,6 @@ export class AdminReviewService {
               ),
               dateOfBirth: String(responsible.dateOfBirth ?? ''),
               encryptedNin: String(responsible.encryptedIdentityNo ?? ''),
-              encryptedBvn: String(responsible.encryptedBvn ?? ''),
               documents: [proofOfNin, proofOfAddress].map((document) => ({
                 id: document.id,
                 type:

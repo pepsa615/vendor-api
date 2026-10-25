@@ -7,6 +7,7 @@ import {
   IsNumber,
   IsOptional,
   IsString,
+  Matches,
   Max,
   Min,
   MinLength,
@@ -60,14 +61,12 @@ export class PersonalDataDto {
   @IsIn(['MALE', 'FEMALE', 'OTHER'])
   gender: string;
   @ApiProperty({ format: 'date' }) @IsDateString() dateOfBirth: string;
-  @ApiProperty({ writeOnly: true })
+  @ApiProperty({ writeOnly: true, example: '12345678901' })
   @IsString()
-  @MinLength(8)
+  @Matches(/^\d{11}$/, {
+    message: 'National Identity Number (NIN) must be exactly 11 digits',
+  })
   identityNumber: string;
-  @ApiProperty({ writeOnly: true })
-  @IsString()
-  @MinLength(11)
-  bvn: string;
   @ApiProperty() @IsString() @MinLength(7) phone: string;
   @ApiProperty() @IsString() @MinLength(4) homeAddress: string;
   @ApiProperty({ enum: NIGERIAN_STATES }) @IsIn(NIGERIAN_STATES) state: string;

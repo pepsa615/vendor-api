@@ -244,3 +244,10 @@ Append entries; never rewrite historical evidence.
 - Published the API/read-model scaling decision, seven recovery/key-rotation runbooks and a signed Rider/provider event schema covering sequence, POD, failed attempt, RTO, location consent and offline recording.
 - Phase 7 repository readiness now includes fail-closed deploy-lane and relationship key-ID configuration, an enablement/rollback checklist and a structured pilot evidence template. Real infrastructure, drills, certification traffic, canary reconciliation and cross-functional production sign-off remain external evidence gates and are not marked complete.
 - Verification: Vendor 20 test files/54 tests and production build passed; Admin backend 51 tests and build passed; Admin frontend 5 tests, lint and production build passed. OpenAPI was regenerated.
+
+## 2026-10-25 — Business-wallet identity and Admin review completion
+
+- Commercial wallet provisioning now uses the approved Vendor business name as the Payment/SVA account name; the responsible person remains supporting KYC evidence.
+- Removed BVN from Vendor onboarding, encrypted onboarding storage, approval snapshots and Vendor-to-Payment provisioning. Vendor Tier 3 continues to require NIN, address, date of birth and both clean KYC documents.
+- Added vendor-scoped, typed application and dispatcher review details, secure audited document access and in-context approval/correction mutations for Admin. Sensitive identity values and storage metadata remain excluded.
+- Regenerated OpenAPI. Vendor server typecheck and all 54 tests passed; Payment wallet policy tests passed. Payment's repository-wide TypeScript check remains blocked by pre-existing unrelated typing failures recorded outside this change.

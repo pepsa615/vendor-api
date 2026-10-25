@@ -54,7 +54,7 @@ export class OnboardingService {
   ) {
     const application = await this.draft(tenantId);
     this.assertEditable(application.status);
-    const { identityNumber, bvn, ...safe } = input;
+    const { identityNumber, ...safe } = input;
     await this.db.onboardingApplication.update({
       where: { id: application.id },
       data: {
@@ -62,7 +62,6 @@ export class OnboardingService {
           ...safe,
           encryptedIdentityNo: encryptSensitive(identityNumber),
           identityFingerprint: sha256(identityNumber),
-          encryptedBvn: encryptSensitive(bvn),
         },
       },
     });
@@ -119,17 +118,14 @@ export class OnboardingService {
         where: { applicationId: application.id },
       });
       await tx.director.createMany({
-        data: directors.map(
-          ({ identityNumber, bvn, dateOfBirth, ...value }) => ({
-            ...value,
-            dateOfBirth: new Date(dateOfBirth),
-            applicationId: application.id,
-            encryptedIdentityNo: encryptSensitive(identityNumber),
-            identityFingerprint: sha256(identityNumber),
-            encryptedBvn: encryptSensitive(bvn),
-            ownershipShare: new Prisma.Decimal(value.ownershipShare),
-          }),
-        ),
+        data: directors.map(({ identityNumber, dateOfBirth, ...value }) => ({
+          ...value,
+          dateOfBirth: new Date(dateOfBirth),
+          applicationId: application.id,
+          encryptedIdentityNo: encryptSensitive(identityNumber),
+          identityFingerprint: sha256(identityNumber),
+          ownershipShare: new Prisma.Decimal(value.ownershipShare),
+        })),
       });
     });
     await this.audit.record({

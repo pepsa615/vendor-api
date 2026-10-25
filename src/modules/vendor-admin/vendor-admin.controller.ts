@@ -20,6 +20,7 @@ import {
 } from '../admin-review/admin-review.guard.js';
 import { VendorAdminService } from './vendor-admin.service.js';
 import { AdminReviewService } from '../admin-review/admin-review.service.js';
+import { PeopleService } from '../people/people.service.js';
 
 type AdminRequest = Request & { adminActor: AdminActor };
 
@@ -37,8 +38,13 @@ const operations = [
   ['delivery-replay', 'POST', 'vendor.exceptions.operate', 'high'],
   ['audit-read', 'GET', 'vendor.audit.read', 'medium'],
   ['reviews-read', 'GET', 'vendor.businesses.read', 'medium'],
+  ['vendor-application-detail', 'GET', 'vendor.businesses.review', 'high'],
+  ['vendor-application-document', 'GET', 'vendor.businesses.review', 'high'],
   ['vendor-application-review', 'POST', 'vendor.businesses.review', 'high'],
   ['dispatchers-read', 'GET', 'vendor.dispatchers.review', 'high'],
+  ['dispatcher-review-detail', 'GET', 'vendor.dispatchers.review', 'high'],
+  ['dispatcher-review-document', 'GET', 'vendor.dispatchers.review', 'high'],
+  ['dispatcher-review', 'POST', 'vendor.dispatchers.review', 'high'],
   ['vendor-suspend', 'POST', 'vendor.businesses.status', 'critical'],
   ['vendor-reactivate', 'POST', 'vendor.businesses.status', 'critical'],
   ['vendor-dispatch-freeze', 'POST', 'vendor.businesses.status', 'critical'],
@@ -66,6 +72,7 @@ export class VendorAdminController {
   constructor(
     private readonly service: VendorAdminService,
     private readonly reviews: AdminReviewService,
+    private readonly people: PeopleService,
   ) {}
 
   @Get('health') health() {
@@ -103,6 +110,47 @@ export class VendorAdminController {
       if (!id) throw new BadRequestException('vendorId is required');
       this.assertVendorScope(request.adminActor, id);
       return this.service.vendor(id);
+    }
+    if (
+      operation === 'vendor-application-detail' ||
+      operation === 'vendor-application-document'
+    ) {
+      const applicationId = params.get('applicationId');
+      if (!applicationId)
+        throw new BadRequestException('applicationId is required');
+      const detail = await this.reviews.detail(applicationId);
+      this.assertVendorScope(request.adminActor, detail.tenantId);
+      if (operation === 'vendor-application-detail') return detail;
+      const documentId = params.get('documentId');
+      if (!documentId) throw new BadRequestException('documentId is required');
+      return this.reviews.document(
+        applicationId,
+        documentId,
+        request.adminActor.actorId,
+      );
+    }
+    if (
+      operation === 'dispatcher-review-detail' ||
+      operation === 'dispatcher-review-document'
+    ) {
+      const revisionId = params.get('revisionId');
+      if (!revisionId) throw new BadRequestException('revisionId is required');
+      const detail = await this.people.reviewDetail(revisionId);
+      this.assertVendorScope(
+        request.adminActor,
+        String(
+          (detail as unknown as { dispatcher: { tenantId?: string } })
+            .dispatcher.tenantId ?? '',
+        ),
+      );
+      if (operation === 'dispatcher-review-detail') return detail;
+      const documentId = params.get('documentId');
+      if (!documentId) throw new BadRequestException('documentId is required');
+      return this.people.reviewDocument(
+        revisionId,
+        documentId,
+        request.adminActor.actorId,
+      );
     }
     if (operation === 'provisioning-list')
       return this.service.provisioningList(request.adminActor.vendorIds);
@@ -157,6 +205,24 @@ export class VendorAdminController {
     if (vendorId) this.assertVendorScope(request.adminActor, vendorId);
     const reason = String(body.reason ?? '');
     if (!reason.trim()) throw new BadRequestException('Reason is required');
+    if (operation === 'vendor-application-review') {
+      const detail = await this.reviews.detail(
+        String(body.applicationId ?? ''),
+      );
+      this.assertVendorScope(request.adminActor, detail.tenantId);
+    }
+    if (operation === 'dispatcher-review') {
+      const detail = await this.people.reviewDetail(
+        String(body.revisionId ?? ''),
+      );
+      this.assertVendorScope(
+        request.adminActor,
+        String(
+          (detail as unknown as { dispatcher: { tenantId?: string } })
+            .dispatcher.tenantId ?? '',
+        ),
+      );
+    }
     const capability = operations.find(
       ([key, method]) => key === operation && method === 'POST',
     );
@@ -185,6 +251,20 @@ export class VendorAdminController {
         if (operation === 'vendor-application-review')
           return this.reviews.decide(
             String(body.applicationId ?? ''),
+            request.adminActor.actorId,
+            idempotencyKey,
+            {
+              decision: body.decision as 'APPROVE' | 'REJECT',
+              reason,
+              correctionFields: Array.isArray(body.correctionFields)
+                ? body.correctionFields.map(String)
+                : undefined,
+            },
+            request.adminActor.requestId,
+          );
+        if (operation === 'dispatcher-review')
+          return this.people.review(
+            String(body.revisionId ?? ''),
             request.adminActor.actorId,
             idempotencyKey,
             {

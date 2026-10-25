@@ -33,7 +33,6 @@ describe('ProvisioningService', () => {
         address: '10 Marina Road',
         dateOfBirth: '1990-01-01',
         encryptedNin: encryptSensitive('12345678901'),
-        encryptedBvn: encryptSensitive('10987654321'),
         documents: [
           {
             type: 'proof_of_nin',
@@ -84,8 +83,8 @@ describe('ProvisioningService', () => {
     expect(payment.createWallet).toHaveBeenCalledWith(
       expect.objectContaining({
         kyc: expect.objectContaining({
+          full_name: 'Vendor Ltd',
           nin: '12345678901',
-          bvn: '10987654321',
           proof_of_nin_document_id: 'pay-doc-nin',
           proof_of_address_document_id: 'pay-doc-address',
         }),

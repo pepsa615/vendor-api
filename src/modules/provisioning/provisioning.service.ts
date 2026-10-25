@@ -1,9 +1,19 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import { HttpException, Injectable, NotFoundException } from '@nestjs/common';
 import { randomUUID } from 'node:crypto';
 import { PrismaService } from '../../core/database/prisma.service.js';
 import { PaymentService } from '../../integrations/payment/payment.service.js';
 import { DocumentStorageService } from '../../integrations/storage/document-storage.service.js';
 import { decryptSensitive } from '../../common/security/crypto.js';
+
+export function normalizeE164Phone(raw: string): string {
+  const digits = raw.replace(/[^\d+]/g, '');
+  if (digits.startsWith('+')) return digits;
+  if (digits.startsWith('234')) return `+${digits}`;
+  if (digits.startsWith('0') && digits.length === 11) {
+    return `+234${digits.slice(1)}`;
+  }
+  return digits.startsWith('+') ? digits : `+${digits}`;
+}
 
 @Injectable()
 export class ProvisioningService {
@@ -89,7 +99,6 @@ export class ProvisioningService {
         address?: string;
         dateOfBirth?: string;
         encryptedNin?: string;
-        encryptedBvn?: string;
         documents?: Array<{
           type: 'proof_of_nin' | 'proof_of_address';
           objectKey: string;
@@ -98,11 +107,7 @@ export class ProvisioningService {
           checksumSha256: string;
         }>;
       };
-      if (
-        !snapshot.encryptedNin ||
-        !snapshot.encryptedBvn ||
-        snapshot.documents?.length !== 2
-      )
+      if (!snapshot.encryptedNin || snapshot.documents?.length !== 2)
         throw new Error('Approved Payment KYC snapshot is incomplete');
       await this.db.vendorProvisioningSaga.update({
         where: { id },
@@ -131,17 +136,17 @@ export class ProvisioningService {
           external_user_id: saga.tenantId,
           user_type: 'business',
           kyc: {
-            full_name: snapshot.fullName ?? saga.vendor.businessName,
-            phone_number: (snapshot.phone ?? saga.vendor.phone).replace(
-              /[ -]/g,
-              '',
+            // The approved business identity is the holder of a commercial wallet.
+            // Responsible-person details remain available as supporting KYC evidence.
+            full_name: saga.vendor.businessName,
+            phone_number: normalizeE164Phone(
+              snapshot.phone ?? saga.vendor.phone,
             ),
             ...(snapshot.address ? { address: snapshot.address } : {}),
             ...(snapshot.dateOfBirth
               ? { date_of_birth: snapshot.dateOfBirth }
               : {}),
             nin: decryptSensitive(snapshot.encryptedNin),
-            bvn: decryptSensitive(snapshot.encryptedBvn),
             proof_of_nin_document_id: imported.get('proof_of_nin'),
             proof_of_address_document_id: imported.get('proof_of_address'),
           },
@@ -174,7 +179,11 @@ export class ProvisioningService {
         Date.now() + Math.min(300_000, 5_000 * 2 ** saga.attempts),
       );
       const code =
-        error instanceof Error ? error.name : 'PAYMENT_PROVISIONING_FAILED';
+        error instanceof HttpException
+          ? `${error.getStatus()}:${typeof error.getResponse() === 'string' ? error.getResponse() : JSON.stringify(error.getResponse()).slice(0, 90)}`
+          : error instanceof Error
+            ? `${error.name}: ${error.message}`.slice(0, 100)
+            : 'PAYMENT_PROVISIONING_FAILED';
       await this.db.$transaction([
         this.db.vendor.update({
           where: { id: saga.tenantId },

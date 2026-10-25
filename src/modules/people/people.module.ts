@@ -13,5 +13,6 @@ import { PeopleService } from './people.service.js';
     InternalDispatcherReviewController,
   ],
   providers: [PeopleService],
+  exports: [PeopleService],
 })
 export class PeopleModule {}
