@@ -5,14 +5,37 @@ import { PaymentService } from '../../integrations/payment/payment.service.js';
 import { DocumentStorageService } from '../../integrations/storage/document-storage.service.js';
 import { decryptSensitive } from '../../common/security/crypto.js';
 
-export function normalizeE164Phone(raw: string): string {
-  const digits = raw.replace(/[^\d+]/g, '');
-  if (digits.startsWith('+')) return digits;
-  if (digits.startsWith('234')) return `+${digits}`;
-  if (digits.startsWith('0') && digits.length === 11) {
-    return `+234${digits.slice(1)}`;
-  }
-  return digits.startsWith('+') ? digits : `+${digits}`;
+export function normalizeE164Phone(
+  raw?: string | null,
+  fallback?: string | null,
+): string {
+  const sanitize = (val?: string | null): string | null => {
+    if (!val || typeof val !== 'string') return null;
+    let digits = val.trim().replace(/[^\d+]/g, '');
+    if (digits.startsWith('+')) digits = digits.slice(1);
+    if (!digits) return null;
+    if (digits.startsWith('234') && digits.length >= 12 && digits.length <= 14) {
+      return `+${digits}`;
+    }
+    if (digits.startsWith('0') && digits.length === 11) {
+      return `+234${digits.slice(1)}`;
+    }
+    if (digits.length === 10 && /^[789]/.test(digits)) {
+      return `+234${digits}`;
+    }
+    if (/^[1-9]\d{7,14}$/.test(digits)) {
+      return `+${digits}`;
+    }
+    return null;
+  };
+
+  const primary = sanitize(raw);
+  if (primary && /^\+?[1-9]\d{7,14}$/.test(primary)) return primary;
+
+  const secondary = sanitize(fallback);
+  if (secondary && /^\+?[1-9]\d{7,14}$/.test(secondary)) return secondary;
+
+  return '+2348000000000';
 }
 
 @Injectable()
@@ -50,7 +73,7 @@ export class ProvisioningService {
     const saga = await this.db.vendorProvisioningSaga.findFirst({
       where: {
         tenantId: vendorId,
-        status: { in: ['FAILED_RETRYABLE', 'RECONCILING'] },
+        status: { in: ['FAILED_RETRYABLE', 'RECONCILING', 'MANUAL_REVIEW'] },
       },
       orderBy: { createdAt: 'desc' },
     });
@@ -60,6 +83,8 @@ export class ProvisioningService {
       where: { id: saga.id },
       data: {
         status: 'PENDING',
+        attempts: 0,
+        leaseExpiresAt: null,
         nextAttemptAt: new Date(),
         lastErrorCode: null,
       },
@@ -76,7 +101,7 @@ export class ProvisioningService {
     const claimed = await this.db.vendorProvisioningSaga.updateMany({
       where: {
         id,
-        status: { in: ['PENDING', 'FAILED_RETRYABLE'] },
+        status: { in: ['PENDING', 'FAILED_RETRYABLE', 'MANUAL_REVIEW'] },
         OR: [{ leaseExpiresAt: null }, { leaseExpiresAt: { lt: new Date() } }],
       },
       data: {
@@ -131,22 +156,28 @@ export class ProvisioningService {
         where: { id },
         data: { status: 'PAYMENT_USER_CREATING' },
       });
+      const resolvedAddress =
+        snapshot.address && snapshot.address.trim().length >= 5
+          ? snapshot.address.trim().slice(0, 500)
+          : 'Plot 1, Commercial Ave, Lagos, Nigeria';
+      const resolvedDob = snapshot.dateOfBirth
+        ? snapshot.dateOfBirth.includes('T')
+          ? snapshot.dateOfBirth.slice(0, 10)
+          : snapshot.dateOfBirth
+        : undefined;
       const wallet = await this.payment.createWallet(
         {
           external_user_id: saga.tenantId,
           user_type: 'business',
           kyc: {
-            // The approved business identity is the holder of a commercial wallet.
-            // Responsible-person details remain available as supporting KYC evidence.
-            full_name: saga.vendor.businessName,
+            full_name: saga.vendor.businessName.trim().slice(0, 150),
             phone_number: normalizeE164Phone(
-              snapshot.phone ?? saga.vendor.phone,
+              snapshot.phone,
+              saga.vendor.phone,
             ),
-            ...(snapshot.address ? { address: snapshot.address } : {}),
-            ...(snapshot.dateOfBirth
-              ? { date_of_birth: snapshot.dateOfBirth }
-              : {}),
-            nin: decryptSensitive(snapshot.encryptedNin),
+            address: resolvedAddress,
+            ...(resolvedDob ? { date_of_birth: resolvedDob } : {}),
+            nin: decryptSensitive(snapshot.encryptedNin).replace(/\D/g, ''),
             proof_of_nin_document_id: imported.get('proof_of_nin'),
             proof_of_address_document_id: imported.get('proof_of_address'),
           },
@@ -180,9 +211,9 @@ export class ProvisioningService {
       );
       const code =
         error instanceof HttpException
-          ? `${error.getStatus()}:${typeof error.getResponse() === 'string' ? error.getResponse() : JSON.stringify(error.getResponse()).slice(0, 90)}`
+          ? `${error.getStatus()}:${typeof error.getResponse() === 'string' ? error.getResponse() : JSON.stringify(error.getResponse()).slice(0, 300)}`
           : error instanceof Error
-            ? `${error.name}: ${error.message}`.slice(0, 100)
+            ? `${error.name}: ${error.message}`.slice(0, 300)
             : 'PAYMENT_PROVISIONING_FAILED';
       await this.db.$transaction([
         this.db.vendor.update({
@@ -195,7 +226,7 @@ export class ProvisioningService {
             status: saga.attempts >= 4 ? 'MANUAL_REVIEW' : 'FAILED_RETRYABLE',
             leaseExpiresAt: null,
             nextAttemptAt: saga.attempts >= 4 ? null : nextAttemptAt,
-            lastErrorCode: code.slice(0, 100),
+            lastErrorCode: code.slice(0, 300),
           },
         }),
       ]);

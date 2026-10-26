@@ -67,8 +67,14 @@ export class PersonalDataDto {
     message: 'National Identity Number (NIN) must be exactly 11 digits',
   })
   identityNumber: string;
-  @ApiProperty() @IsString() @MinLength(7) phone: string;
-  @ApiProperty() @IsString() @MinLength(4) homeAddress: string;
+  @ApiProperty({ example: '08012345678' })
+  @IsString()
+  @Matches(/^(\+?234|0)?[789][01]\d{8}$|^\+?[1-9]\d{7,14}$/, {
+    message:
+      'Phone number must be a valid Nigerian or international phone number',
+  })
+  phone: string;
+  @ApiProperty() @IsString() @MinLength(5) homeAddress: string;
   @ApiProperty({ enum: NIGERIAN_STATES }) @IsIn(NIGERIAN_STATES) state: string;
   @ApiProperty() @IsString() city: string;
 }
