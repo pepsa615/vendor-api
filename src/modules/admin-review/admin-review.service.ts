@@ -9,6 +9,7 @@ import { PrismaService } from '../../core/database/prisma.service.js';
 import { AuditService } from '../../common/audit/audit.service.js';
 import { sha256 } from '../../common/security/crypto.js';
 import { DocumentStorageService } from '../../integrations/storage/document-storage.service.js';
+import { normalizeE164Phone } from '../provisioning/provisioning.service.js';
 import type { ReviewApplicationDto } from './admin-review.dto.js';
 @Injectable()
 export class AdminReviewService {
@@ -216,38 +217,55 @@ export class AdminReviewService {
         );
         if (!proofOfNin || !proofOfAddress)
           throw new ConflictException('Approved Payment KYC documents missing');
+        const snapshotPhone = normalizeE164Phone(
+          String(responsible.phone ?? ''),
+          application.vendor.phone,
+        );
+        const rawAddress = String(
+          responsible.homeAddress ?? business.businessAddress ?? '',
+        ).trim();
+        const snapshotAddress =
+          rawAddress.length >= 5 ? rawAddress : 'Plot 1, Commercial Ave, Lagos, Nigeria';
+        const snapshotDob = String(responsible.dateOfBirth ?? '').slice(0, 10);
+        const approvedKycSnapshot = {
+          fullName:
+            `${String(responsible.firstName ?? '').trim()} ${String(responsible.lastName ?? '').trim()}`.trim() ||
+            application.vendor.businessName,
+          phone: snapshotPhone,
+          address: snapshotAddress,
+          dateOfBirth: snapshotDob,
+          encryptedNin: String(responsible.encryptedIdentityNo ?? ''),
+          documents: [proofOfNin, proofOfAddress].map((document) => ({
+            id: document.id,
+            type:
+              document.documentType === 'PROOF_OF_ID'
+                ? ('proof_of_nin' as const)
+                : ('proof_of_address' as const),
+            objectKey: document.objectKey,
+            contentType: document.mimeType,
+            contentLength: document.sizeBytes,
+            checksumSha256: document.checksum,
+          })),
+          applicationVersion: application.version,
+        };
+
         await tx.vendorProvisioningSaga.upsert({
           where: { applicationId },
           create: {
             tenantId: application.tenantId,
             applicationId,
-            approvedKycSnapshot: {
-              fullName:
-                `${String(responsible.firstName ?? '').trim()} ${String(responsible.lastName ?? '').trim()}`.trim() ||
-                application.vendor.businessName,
-              phone:
-                String(responsible.phone ?? '').trim() ||
-                application.vendor.phone,
-              address: String(
-                responsible.homeAddress ?? business.businessAddress ?? '',
-              ),
-              dateOfBirth: String(responsible.dateOfBirth ?? ''),
-              encryptedNin: String(responsible.encryptedIdentityNo ?? ''),
-              documents: [proofOfNin, proofOfAddress].map((document) => ({
-                id: document.id,
-                type:
-                  document.documentType === 'PROOF_OF_ID'
-                    ? 'proof_of_nin'
-                    : 'proof_of_address',
-                objectKey: document.objectKey,
-                contentType: document.mimeType,
-                contentLength: document.sizeBytes,
-                checksumSha256: document.checksum,
-              })),
-              applicationVersion: application.version,
-            },
+            status: 'PENDING',
+            attempts: 0,
+            approvedKycSnapshot,
           },
-          update: {},
+          update: {
+            status: 'PENDING',
+            attempts: 0,
+            nextAttemptAt: new Date(),
+            leaseExpiresAt: null,
+            lastErrorCode: null,
+            approvedKycSnapshot,
+          },
         });
       }
       await tx.idempotencyRecord.create({

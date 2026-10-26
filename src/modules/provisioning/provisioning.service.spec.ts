@@ -84,12 +84,26 @@ describe('ProvisioningService', () => {
       expect.objectContaining({
         kyc: expect.objectContaining({
           full_name: 'Vendor Ltd',
+          phone_number: '+2348012345678',
           nin: '12345678901',
           proof_of_nin_document_id: 'pay-doc-nin',
           proof_of_address_document_id: 'pay-doc-address',
         }),
       }),
       'vendor-wallet:44444444-4444-4444-8444-444444444444:55555555-5555-4555-8555-555555555555',
+    );
+  });
+
+  it('normalizes Nigerian numbers and safely falls back when snapshot phone is malformed', async () => {
+    const { normalizeE164Phone } = await import('./provisioning.service.js');
+    expect(normalizeE164Phone('08050991312')).toBe('+2348050991312');
+    expect(normalizeE164Phone('8050991312')).toBe('+2348050991312');
+    expect(normalizeE164Phone('+2348050991312')).toBe('+2348050991312');
+    expect(normalizeE164Phone('Princeoage@915', '08050991312')).toBe(
+      '+2348050991312',
+    );
+    expect(normalizeE164Phone('invalid', '+2349029566770')).toBe(
+      '+2349029566770',
     );
   });
 });
