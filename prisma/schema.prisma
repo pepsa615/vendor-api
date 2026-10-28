@@ -427,20 +427,21 @@ model BatchItem {
 }
 
 model Manifest {
-  id                  String             @id @default(uuid()) @db.Uuid
-  publicReference     String             @unique
-  waybillNumber       String             @unique
-  originTenantId      String             @db.Uuid
-  destinationTenantId String             @db.Uuid
-  status              ManifestStatus     @default(SENT)
-  currentVersion      Int                @default(1)
-  createdById         String
-  createdAt           DateTime           @default(now())
-  updatedAt           DateTime           @updatedAt
-  originVendor        Vendor             @relation("ManifestOrigin", fields: [originTenantId], references: [id], onDelete: Restrict)
-  destinationVendor   Vendor             @relation("ManifestDestination", fields: [destinationTenantId], references: [id], onDelete: Restrict)
-  revisions           ManifestRevision[]
-  actions             ManifestAction[]
+  id                   String                        @id @default(uuid()) @db.Uuid
+  publicReference      String                        @unique
+  waybillNumber        String                        @unique
+  originTenantId       String                        @db.Uuid
+  destinationTenantId  String                        @db.Uuid
+  status               ManifestStatus                @default(SENT)
+  currentVersion       Int                           @default(1)
+  createdById          String
+  createdAt            DateTime                      @default(now())
+  updatedAt            DateTime                      @updatedAt
+  originVendor         Vendor                        @relation("ManifestOrigin", fields: [originTenantId], references: [id], onDelete: Restrict)
+  destinationVendor    Vendor                        @relation("ManifestDestination", fields: [destinationTenantId], references: [id], onDelete: Restrict)
+  revisions            ManifestRevision[]
+  actions              ManifestAction[]
+  transportAssignments ManifestTransportAssignment[]
 
   @@index([originTenantId, createdAt])
   @@index([destinationTenantId, createdAt])
@@ -493,6 +494,26 @@ model ManifestAction {
 
   @@index([manifestId, createdAt])
   @@map("manifest_actions")
+}
+
+model ManifestTransportAssignment {
+  id                   String             @id @default(uuid()) @db.Uuid
+  manifestId           String             @db.Uuid
+  tenantId             String             @db.Uuid
+  dispatcherId         String             @db.Uuid
+  dispatcherRevisionId String             @db.Uuid
+  assignedById         String
+  reason               String
+  active               Boolean            @default(true)
+  assignedAt           DateTime           @default(now())
+  endedAt              DateTime?
+  manifest             Manifest           @relation(fields: [manifestId], references: [id], onDelete: Restrict)
+  dispatcher           Dispatcher         @relation(fields: [dispatcherId], references: [id], onDelete: Restrict)
+  dispatcherRevision   DispatcherRevision @relation(fields: [dispatcherRevisionId], references: [id], onDelete: Restrict)
+
+  @@index([manifestId, active])
+  @@index([tenantId, dispatcherId, active])
+  @@map("manifest_transport_assignments")
 }
 
 model ManifestPreview {
@@ -578,20 +599,21 @@ model Customer {
 }
 
 model Dispatcher {
-  id                 String               @id @default(uuid()) @db.Uuid
-  tenantId           String               @db.Uuid
-  status             DispatcherStatus     @default(DRAFT)
-  availability       Boolean              @default(false)
-  approvedRevisionId String?              @unique @db.Uuid
-  latestRevisionId   String?              @unique @db.Uuid
-  totalOrdersPicked  Int                  @default(0)
-  createdAt          DateTime             @default(now())
-  updatedAt          DateTime             @updatedAt
-  vendor             Vendor               @relation(fields: [tenantId], references: [id], onDelete: Restrict)
-  revisions          DispatcherRevision[] @relation("DispatcherRevisions")
-  approvedRevision   DispatcherRevision?  @relation("ApprovedDispatcherRevision", fields: [approvedRevisionId], references: [id], onDelete: SetNull)
-  latestRevision     DispatcherRevision?  @relation("LatestDispatcherRevision", fields: [latestRevisionId], references: [id], onDelete: SetNull)
-  dispatches         Dispatch[]
+  id                  String                        @id @default(uuid()) @db.Uuid
+  tenantId            String                        @db.Uuid
+  status              DispatcherStatus              @default(DRAFT)
+  availability        Boolean                       @default(false)
+  approvedRevisionId  String?                       @unique @db.Uuid
+  latestRevisionId    String?                       @unique @db.Uuid
+  totalOrdersPicked   Int                           @default(0)
+  createdAt           DateTime                      @default(now())
+  updatedAt           DateTime                      @updatedAt
+  vendor              Vendor                        @relation(fields: [tenantId], references: [id], onDelete: Restrict)
+  revisions           DispatcherRevision[]          @relation("DispatcherRevisions")
+  approvedRevision    DispatcherRevision?           @relation("ApprovedDispatcherRevision", fields: [approvedRevisionId], references: [id], onDelete: SetNull)
+  latestRevision      DispatcherRevision?           @relation("LatestDispatcherRevision", fields: [latestRevisionId], references: [id], onDelete: SetNull)
+  dispatches          Dispatch[]
+  manifestAssignments ManifestTransportAssignment[]
 
   @@index([tenantId, status])
   @@index([tenantId, availability])
@@ -707,10 +729,10 @@ model DispatchProviderEvent {
 }
 
 model DispatcherRevision {
-  id                      String                   @id @default(uuid()) @db.Uuid
-  dispatcherId            String                   @db.Uuid
+  id                      String                        @id @default(uuid()) @db.Uuid
+  dispatcherId            String                        @db.Uuid
   version                 Int
-  status                  DispatcherRevisionStatus @default(DRAFT)
+  status                  DispatcherRevisionStatus      @default(DRAFT)
   firstName               String
   lastName                String
   email                   String
@@ -734,17 +756,18 @@ model DispatcherRevision {
   guarantorPhone          String
   guarantorEmail          String?
   guarantorAddress        String?
-  revenueSharePct         Decimal                  @db.Decimal(5, 2)
+  revenueSharePct         Decimal                       @db.Decimal(5, 2)
   submittedAt             DateTime?
   decidedAt               DateTime?
   decisionReason          String?
-  correctionFields        String[]                 @default([])
-  createdAt               DateTime                 @default(now())
-  updatedAt               DateTime                 @updatedAt
-  dispatcher              Dispatcher               @relation("DispatcherRevisions", fields: [dispatcherId], references: [id], onDelete: Cascade)
-  approvedFor             Dispatcher?              @relation("ApprovedDispatcherRevision")
-  latestFor               Dispatcher?              @relation("LatestDispatcherRevision")
+  correctionFields        String[]                      @default([])
+  createdAt               DateTime                      @default(now())
+  updatedAt               DateTime                      @updatedAt
+  dispatcher              Dispatcher                    @relation("DispatcherRevisions", fields: [dispatcherId], references: [id], onDelete: Cascade)
+  approvedFor             Dispatcher?                   @relation("ApprovedDispatcherRevision")
+  latestFor               Dispatcher?                   @relation("LatestDispatcherRevision")
   documents               DispatcherDocument[]
+  manifestAssignments     ManifestTransportAssignment[]
 
   @@unique([dispatcherId, version])
   @@index([status, submittedAt])

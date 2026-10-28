@@ -65,7 +65,12 @@ export class OrdersService {
     const [items, total] = await this.db.$transaction([
       this.db.order.findMany({
         where,
-        include: { checkout: true },
+        include: {
+          checkout: true,
+          batchItem: { select: { batchId: true } },
+          manifestItems: { select: { id: true } },
+          dispatchItems: { select: { dispatchId: true } },
+        },
         orderBy: { createdAt: 'desc' },
         skip: (query.page - 1) * query.pageSize,
         take: query.pageSize,
@@ -160,6 +165,45 @@ export class OrdersService {
       throw new ConflictException('Quote is invalid or expired');
     const locations = await this.resolveLocations(input);
     const order = await this.db.$transaction(async (tx) => {
+      const resolveCustomer = async (
+        id: string | undefined,
+        save: boolean | undefined,
+        contact: { name: string; phone: string; email?: string },
+      ) => {
+        if (id) {
+          const customer = await tx.customer.findFirst({
+            where: { id, tenantId },
+          });
+          if (!customer)
+            throw new ConflictException('Selected customer is unavailable');
+          return customer;
+        }
+        if (!save) return null;
+        const phone = contact.phone.trim();
+        return tx.customer.upsert({
+          where: { tenantId_phone: { tenantId, phone } },
+          update: {
+            name: contact.name.trim(),
+            email: contact.email?.trim().toLowerCase(),
+          },
+          create: {
+            tenantId,
+            name: contact.name.trim(),
+            phone,
+            email: contact.email?.trim().toLowerCase(),
+          },
+        });
+      };
+      const senderCustomer = await resolveCustomer(
+        input.senderCustomerId ?? input.customerId,
+        input.saveSender,
+        input.sender,
+      );
+      await resolveCustomer(
+        input.receiverCustomerId,
+        input.saveReceiver,
+        input.receiver,
+      );
       const created = await tx.order.create({
         data: {
           tenantId,
@@ -169,6 +213,7 @@ export class OrdersService {
           paymentStatus: 'NOT_REQUIRED',
           createdById: actorId,
           ...this.orderData(input),
+          customerId: senderCustomer?.id,
           pickup: locations.pickup as any,
           delivery: locations.delivery as any,
           ...(quote

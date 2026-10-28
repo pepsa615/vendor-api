@@ -106,6 +106,14 @@ export class DispatchService {
     if ((input.batchId && !batch) || (input.orderId && !order))
       throw new NotFoundException('Eligible dispatch source not found');
     const orders = batch ? batch.items.map((item) => item.order) : [order!];
+    if (
+      input.mode === 'GENERAL_POOL' &&
+      orders.length > 1 &&
+      process.env.PEPSA_ORDER_BATCH_INTAKE_ENABLED !== 'true'
+    )
+      throw new ConflictException(
+        'Open Dispatch batch intake is not enabled for this deployment',
+      );
     if (!orders.length || orders.some((item) => !this.eligible(item)))
       throw new ConflictException(
         'Source contains an order that is not dispatch-ready',

@@ -32,7 +32,9 @@ describe('PricingService tier policy', () => {
 
   it('selects the same tier band used for customer quotes', () => {
     expect(service.tierForDistance(4_999, tiers)?.tierNumber).toBe(1);
+    expect(service.tierForDistance(5_000, tiers)?.tierNumber).toBe(2);
     expect(service.tierForDistance(15_000, tiers)?.tierNumber).toBe(4);
+    expect(service.tierForDistance(25_000, tiers)?.tierNumber).toBe(4);
     expect(service.tierForDistance(25_001, tiers)).toBeUndefined();
   });
 });

@@ -1,4 +1,5 @@
 import {
+  BadRequestException,
   ConflictException,
   Injectable,
   NotFoundException,
@@ -8,6 +9,7 @@ import { AuditService } from '../../common/audit/audit.service.js';
 import { PrismaService } from '../../core/database/prisma.service.js';
 import type {
   BatchListQueryDto,
+  AssignManifestDispatcherDto,
   ManifestActionDto,
   ManifestListQueryDto,
   ManifestPreviewDto,
@@ -67,6 +69,13 @@ export class ManifestsService {
         source: true,
         status: true,
         paymentStatus: true,
+        sender: true,
+        receiver: true,
+        pickup: true,
+        delivery: true,
+        itemDescription: true,
+        orderType: true,
+        createdAt: true,
         batchItem: { select: { orderId: true } },
         manifestItems: {
           where: { revision: { manifest: { status: { in: [...ACTIVE] } } } },
@@ -78,7 +87,7 @@ export class ManifestsService {
     const byReference = new Map(
       orders.map((order) => [order.publicReference.toUpperCase(), order]),
     );
-    const valid: Array<{ id: string; trackingId: string }> = [];
+    const valid: Array<Record<string, unknown>> = [];
     const invalid: Array<{ trackingId: string; reason: string }> = [];
     for (const trackingId of parsed.unique) {
       const order = byReference.get(trackingId);
@@ -98,7 +107,22 @@ export class ManifestsService {
               ? 'ALREADY_GROUPED'
               : null;
       if (reason) invalid.push({ trackingId, reason });
-      else valid.push({ id: order!.id, trackingId });
+      else
+        valid.push({
+          id: order!.id,
+          trackingId,
+          publicReference: order!.publicReference,
+          sender: order!.sender,
+          receiver: order!.receiver,
+          pickup: order!.pickup,
+          delivery: order!.delivery,
+          itemDescription: order!.itemDescription,
+          orderType: order!.orderType,
+          source: order!.source,
+          status: order!.status,
+          paymentStatus: order!.paymentStatus,
+          createdAt: order!.createdAt,
+        });
     }
     return {
       total: parsed.submitted.length,
@@ -129,7 +153,27 @@ export class ManifestsService {
     return { previewToken: token, expiresAt };
   }
 
-  async validateBatch(tenantId: string, actorId: string, raw: string) {
+  async validateBatch(
+    tenantId: string,
+    actorId: string,
+    input: { trackingIds?: string; orderIds?: string[] },
+  ) {
+    if (Boolean(input.trackingIds?.trim()) === Boolean(input.orderIds?.length))
+      throw new BadRequestException(
+        'Provide exactly one of trackingIds or orderIds',
+      );
+    const raw = input.orderIds?.length
+      ? (
+          await this.db.order.findMany({
+            where: { id: { in: [...new Set(input.orderIds)] }, tenantId },
+            select: { publicReference: true },
+          })
+        )
+          .map(({ publicReference }) => publicReference)
+          .join('\n')
+      : input.trackingIds!;
+    if (input.orderIds?.length && !raw)
+      throw new BadRequestException('No eligible order identifiers were found');
     const result = await this.classify(tenantId, raw);
     const token = result.valid.length
       ? await this.preview(tenantId, actorId, 'BATCH', {
@@ -598,6 +642,21 @@ export class ManifestsService {
           },
         },
         actions: { orderBy: { createdAt: 'asc' } },
+        transportAssignments: {
+          orderBy: { assignedAt: 'desc' },
+          include: {
+            dispatcherRevision: {
+              select: {
+                firstName: true,
+                lastName: true,
+                phone: true,
+                vehicleType: true,
+                vehicleBrand: true,
+                plateNumber: true,
+              },
+            },
+          },
+        },
       },
     });
     if (!item) throw new NotFoundException('Manifest not found');
@@ -651,11 +710,25 @@ export class ManifestsService {
     )
       throw new ConflictException('An exception message is required');
     const manifest = await this.db.manifest.findFirst({
-      where: { id, destinationTenantId: tenantId },
+      where: {
+        id,
+        ...(input.status === 'IN_TRANSIT'
+          ? { originTenantId: tenantId }
+          : { destinationTenantId: tenantId }),
+      },
     });
     if (!manifest) throw new NotFoundException('Manifest not found');
     if (manifest.currentVersion !== input.version)
       throw new ConflictException('Manifest changed concurrently');
+    if (input.status === 'IN_TRANSIT') {
+      const assignment = await this.db.manifestTransportAssignment.findFirst({
+        where: { manifestId: id, tenantId, active: true },
+      });
+      if (!assignment)
+        throw new ConflictException(
+          'Assign an approved dispatcher before starting transit',
+        );
+    }
     const allowed =
       manifest.status === 'ACCEPTED'
         ? ['IN_TRANSIT']
@@ -675,6 +748,81 @@ export class ManifestsService {
       input.message,
       key,
     );
+  }
+
+  async assignDispatcher(
+    tenantId: string,
+    actorId: string,
+    id: string,
+    input: AssignManifestDispatcherDto,
+    key: string,
+  ) {
+    if (!key) throw new ConflictException('Idempotency-Key is required');
+    if (!input.reason.trim())
+      throw new ConflictException('Assignment reason is required');
+    const scope = `manifest-dispatcher:${tenantId}:${id}`;
+    const replay = await this.db.idempotencyRecord.findUnique({
+      where: { scope_key: { scope, key } },
+    });
+    if (replay) return replay.responseBody;
+    const manifest = await this.db.manifest.findFirst({
+      where: { id, originTenantId: tenantId, status: 'ACCEPTED' },
+    });
+    if (!manifest)
+      throw new ConflictException(
+        'Only an accepted outbound manifest can be assigned',
+      );
+    const dispatcher = await this.db.dispatcher.findFirst({
+      where: {
+        id: input.dispatcherId,
+        tenantId,
+        status: 'APPROVED',
+        availability: true,
+        approvedRevisionId: { not: null },
+      },
+      include: { approvedRevision: true },
+    });
+    if (!dispatcher?.approvedRevisionId)
+      throw new ConflictException('Dispatcher is not approved and available');
+    const assignment = await this.db.$transaction(async (tx) => {
+      await tx.manifestTransportAssignment.updateMany({
+        where: { manifestId: id, active: true },
+        data: { active: false, endedAt: new Date() },
+      });
+      const created = await tx.manifestTransportAssignment.create({
+        data: {
+          manifestId: id,
+          tenantId,
+          dispatcherId: dispatcher.id,
+          dispatcherRevisionId: dispatcher.approvedRevisionId!,
+          assignedById: actorId,
+          reason: input.reason.trim(),
+        },
+        include: { dispatcherRevision: true },
+      });
+      await tx.idempotencyRecord.create({
+        data: {
+          scope,
+          key,
+          actorId,
+          requestHash: createHash('sha256')
+            .update(JSON.stringify(input))
+            .digest('hex'),
+          responseStatus: 201,
+          responseBody: created as any,
+          expiresAt: new Date(Date.now() + 24 * 60 * 60 * 1000),
+        },
+      });
+      return created;
+    });
+    await this.audit.record({
+      tenantId,
+      actorId,
+      action: 'manifest.dispatcher_assigned',
+      subjectId: id,
+      metadata: { dispatcherId: dispatcher.id, reason: input.reason },
+    });
+    return assignment;
   }
 
   private async transitionRecord(

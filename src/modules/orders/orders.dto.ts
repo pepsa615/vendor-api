@@ -58,6 +58,10 @@ export class CreateVendorOrderDto {
   @IsBoolean() fragile: boolean;
   @IsOptional() @IsIn(['SMALL', 'MEDIUM', 'LARGE']) sizeEstimate?: string;
   @IsOptional() @IsString() customerId?: string;
+  @IsOptional() @IsString() senderCustomerId?: string;
+  @IsOptional() @IsString() receiverCustomerId?: string;
+  @IsOptional() @IsBoolean() saveSender?: boolean;
+  @IsOptional() @IsBoolean() saveReceiver?: boolean;
   @IsOptional()
   @IsIn([
     'bicycle',

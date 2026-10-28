@@ -251,3 +251,11 @@ Append entries; never rewrite historical evidence.
 - Removed BVN from Vendor onboarding, encrypted onboarding storage, approval snapshots and Vendor-to-Payment provisioning. Vendor Tier 3 continues to require NIN, address, date of birth and both clean KYC documents.
 - Added vendor-scoped, typed application and dispatcher review details, secure audited document access and in-context approval/correction mutations for Admin. Sensitive identity values and storage metadata remain excluded.
 - Regenerated OpenAPI. Vendor server typecheck and all 54 tests passed; Payment wallet policy tests passed. Payment's repository-wide TypeScript check remains blocked by pre-existing unrelated typing failures recorded outside this change.
+
+## 2026-10-27 — Batch, manifest assignment and contact contract completion
+
+- Batch validation now accepts exactly one of typed order IDs or legacy tracking references and returns human-readable order snapshots. Finalization still rechecks tenant ownership, readiness and exclusive batch/manifest/dispatch membership.
+- Added immutable Travel Manifest transport-assignment history. Only the origin Vendor can assign or reassign an approved available dispatcher after acceptance, and transit is blocked until an active assignment exists.
+- Vendor-assisted order creation now supports independent saved sender and receiver identities plus idempotent optional contact saving while retaining immutable order contact snapshots.
+- Added capability-gated prepaid multi-order submission to Pepsa Order. Contract validation occurs before Payment debit; ambiguous outcomes use external-reference inquiry and definitive failures retain the compensation path.
+- Added the additive manifest-assignment migration and regenerated the Vendor OpenAPI contract.

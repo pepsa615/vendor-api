@@ -19,6 +19,7 @@ import { PermissionGuard } from '../../integrations/iam/permission.guard.js';
 import { RequirePermission } from '../../integrations/iam/require-permission.decorator.js';
 import {
   BatchListQueryDto,
+  AssignManifestDispatcherDto,
   ConfirmPreviewDto,
   ManifestActionDto,
   ManifestListQueryDto,
@@ -44,7 +45,7 @@ export class ManifestsController {
     return this.manifests.validateBatch(
       req.actor.tenantId,
       req.actor.actorId,
-      body.trackingIds,
+      body,
     );
   }
 
@@ -164,6 +165,23 @@ export class ManifestsController {
     @Body() body: ManifestTransitionDto,
   ) {
     return this.manifests.transition(
+      req.actor.tenantId,
+      req.actor.actorId,
+      id,
+      body,
+      key,
+    );
+  }
+
+  @Post(':id/dispatcher-assignment')
+  @RequirePermission(['manifests.manage', 'operations.manage'])
+  assignDispatcher(
+    @Req() req: ActorRequest,
+    @Param('id') id: string,
+    @Headers('idempotency-key') key: string,
+    @Body() body: AssignManifestDispatcherDto,
+  ) {
+    return this.manifests.assignDispatcher(
       req.actor.tenantId,
       req.actor.actorId,
       id,

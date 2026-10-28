@@ -35,10 +35,7 @@ export class PepsaOrderDispatchAdapter extends DispatchProviderPort {
       !input.orders?.length
     )
       throw new ConflictException('General Pool submission is incomplete');
-    if (input.orders.length !== 1)
-      throw new ConflictException(
-        'General Pool batches require the Pepsa Order batch contract',
-      );
+    if (input.orders.length > 1) return this.submitBatch(base, input);
     const order = input.orders[0];
     const intake = {
       externalReference: input.dispatchReference,
@@ -107,6 +104,76 @@ export class PepsaOrderDispatchAdapter extends DispatchProviderPort {
       body: JSON.stringify({ authorityReference: input.paymentReference }),
     });
     return { providerReference: shipmentId };
+  }
+
+  private async submitBatch(base: string, input: SubmitInput) {
+    if (this.config.get<string>('PEPSA_ORDER_BATCH_INTAKE_ENABLED') !== 'true')
+      throw new ConflictException('Pepsa Order batch intake is unavailable');
+    const shipments = input.orders!.map((order) => ({
+      sender: this.location(input.pickup!, order.sender),
+      recipient: this.location(order.delivery, order.receiver),
+      category: this.code(order.orderType),
+      itemDescription: order.itemDescription,
+      ...(order.sizeEstimate ? { itemSize: order.sizeEstimate } : {}),
+      ...(order.declaredValue != null
+        ? {
+            declaredValue: {
+              amountMinor: String(Math.round(order.declaredValue * 100)),
+              currency: input.currency,
+            },
+          }
+        : {}),
+      fragile: order.fragile,
+      deliveryScope: 'LAST_MILE',
+      preferredMobility: this.code(input.mobilityMethod ?? 'motorcycle'),
+      timing: order.deliveryStatus,
+      ...(order.deliveryStatus === 'SCHEDULED'
+        ? {
+            scheduledWindow: {
+              start: order.scheduledStart,
+              end: order.scheduledEnd,
+            },
+          }
+        : {}),
+    }));
+    const body = {
+      externalReference: input.dispatchReference,
+      authorityReference: input.paymentReference,
+      quote: {
+        reference: `vendor:${input.dispatchReference}`,
+        amountMinor: String(input.amountMinor),
+        currency: input.currency,
+        expiresAt: input.quoteExpiresAt,
+      },
+      shipments,
+    };
+    let result: Record<string, unknown>;
+    try {
+      result = await this.request(`${base}/api/v1/orders/batches/prepaid`, {
+        method: 'POST',
+        headers: this.headers(`general-pool-batch:${input.dispatchReference}`),
+        body: JSON.stringify(body),
+      });
+    } catch (error) {
+      try {
+        result = await this.request(
+          `${base}/api/v1/orders/batches/external-reference/${encodeURIComponent(input.dispatchReference)}`,
+          {
+            method: 'GET',
+            headers: this.headers(
+              `general-pool-batch-inquiry:${input.dispatchReference}`,
+            ),
+          },
+        );
+      } catch {
+        throw error;
+      }
+    }
+    if (!result.externalReference)
+      throw new ServiceUnavailableException(
+        'Pepsa Order batch response is invalid',
+      );
+    return { providerReference: String(result.externalReference) };
   }
 
   async cancel(_providerReference: string) {

@@ -12,7 +12,12 @@ import {
 } from 'class-validator';
 
 export class ValidateTrackingIdsDto {
-  @IsString() @MaxLength(20_000) trackingIds: string;
+  @IsOptional() @IsString() @MaxLength(20_000) trackingIds?: string;
+  @IsOptional()
+  @IsArray()
+  @ArrayMaxSize(500)
+  @IsUUID('4', { each: true })
+  orderIds?: string[];
 }
 
 export class ConfirmPreviewDto {
@@ -63,4 +68,9 @@ export class ManifestTransitionDto {
   status: string;
   @IsOptional() @IsString() @MaxLength(500) message?: string;
   @IsInt() @Min(1) version: number;
+}
+
+export class AssignManifestDispatcherDto {
+  @IsUUID() dispatcherId: string;
+  @IsString() @MaxLength(500) reason: string;
 }
