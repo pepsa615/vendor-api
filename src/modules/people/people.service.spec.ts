@@ -25,7 +25,12 @@ const validDispatcher = {
 };
 
 describe('PeopleService dispatcher policy', () => {
-  const service = new PeopleService({} as never, {} as never, {} as never);
+  const service = new PeopleService(
+    {} as never,
+    {} as never,
+    {} as never,
+    { lookupByPhone: async () => null } as never,
+  );
 
   it('requires vehicle details for motorized dispatchers', async () => {
     await expect(

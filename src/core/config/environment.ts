@@ -51,6 +51,9 @@ const schema = z.object({
   ORDER_VENDOR_SIGNING_KEY_ID: z.string().min(1).optional(),
   DISPATCH_WEBHOOK_SECRET: z.string().min(32).optional(),
   DISPATCH_WEBHOOK_KEY_ID: z.string().min(1).optional(),
+  RIDER_FLEET_BASE_URL: z.url().optional(),
+  FLEET_API_TOKEN: z.string().min(16).optional(),
+  RIDER_FLEET_TIMEOUT_MS: z.coerce.number().int().positive().default(5000),
   SWAGGER_ENABLED: z.enum(['true', 'false']).default('false'),
 });
 

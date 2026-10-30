@@ -11,6 +11,7 @@ import { AuditService } from '../../common/audit/audit.service.js';
 import { encryptSensitive, sha256 } from '../../common/security/crypto.js';
 import { PrismaService } from '../../core/database/prisma.service.js';
 import { DocumentStorageService } from '../../integrations/storage/document-storage.service.js';
+import { RiderBackendService } from '../../integrations/rider/rider-backend.service.js';
 import type {
   CreateCustomerDto,
   CreateDispatcherDto,
@@ -38,6 +39,7 @@ export class PeopleService {
     private readonly db: PrismaService,
     private readonly storage: DocumentStorageService,
     private readonly audit: AuditService,
+    private readonly riders: RiderBackendService,
   ) {}
 
   async customers(tenantId: string, query: PeopleListQueryDto) {
@@ -182,7 +184,47 @@ export class PeopleService {
       },
     });
     if (!row) throw new NotFoundException('Dispatcher not found');
-    return this.safeDispatcher(row);
+    const safe = this.safeDispatcher(row);
+    const phone = this.dispatcherPhone(row);
+    const rider = phone ? await this.riders.lookupByPhone(phone) : null;
+    return {
+      ...safe,
+      selfieUrl: rider?.photo ?? null,
+      riderOnline: rider?.online ?? null,
+      riderLocationObservedAt: rider?.locationObservedAt ?? null,
+    };
+  }
+
+  async dispatcherLocation(tenantId: string, id: string) {
+    const row = await this.db.dispatcher.findFirst({
+      where: { id, tenantId },
+      include: {
+        approvedRevision: true,
+        latestRevision: true,
+      },
+    });
+    if (!row) throw new NotFoundException('Dispatcher not found');
+    const phone = this.dispatcherPhone(row);
+    if (!phone) return null;
+    const rider = await this.riders.lookupByPhone(phone);
+    if (!rider?.position) return null;
+    return {
+      latitude: rider.position.latitude,
+      longitude: rider.position.longitude,
+      observedAt: rider.locationObservedAt,
+      online: rider.online,
+    };
+  }
+
+  private dispatcherPhone(row: {
+    approvedRevision: { phone?: string | null } | null;
+    latestRevision: { phone?: string | null } | null;
+  }): string | null {
+    const phone =
+      row.approvedRevision?.phone?.trim() ||
+      row.latestRevision?.phone?.trim() ||
+      '';
+    return phone || null;
   }
 
   async updateDispatcher(

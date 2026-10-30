@@ -93,6 +93,12 @@ export class DispatchersController {
     return this.people.dispatcher(req.actor.tenantId, id);
   }
 
+  @Get(':id/location')
+  @RequirePermission('people.dispatchers.read')
+  location(@Req() req: ActorRequest, @Param('id') id: string) {
+    return this.people.dispatcherLocation(req.actor.tenantId, id);
+  }
+
   @Patch(':id')
   @RequirePermission('people.dispatchers.manage')
   update(

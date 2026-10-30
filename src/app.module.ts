@@ -14,6 +14,7 @@ import { EmailModule } from './modules/email/email.module.js';
 import { PeopleModule } from './modules/people/people.module.js';
 import { MapsModule } from './integrations/maps/maps.module.js';
 import { PaymentModule } from './integrations/payment/payment.module.js';
+import { RiderModule } from './integrations/rider/rider.module.js';
 import { PricingModule } from './modules/pricing/pricing.module.js';
 import { OrdersModule } from './modules/orders/orders.module.js';
 import { ManifestsModule } from './modules/manifests/manifests.module.js';
@@ -41,6 +42,7 @@ import { VendorAdminModule } from './modules/vendor-admin/vendor-admin.module.js
     PeopleModule,
     MapsModule,
     PaymentModule,
+    RiderModule,
     PricingModule,
     OrdersModule,
     ManifestsModule,
