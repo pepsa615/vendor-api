@@ -1,15 +1,19 @@
 import {
+  BadRequestException,
   Body,
   Controller,
   Get,
   Headers,
+  Param,
   Post,
   Query,
   Req,
+  Res,
   UseGuards,
 } from '@nestjs/common';
 import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
 import type { Request } from 'express';
+import type { Response } from 'express';
 import type { AuthenticatedActor } from '../../integrations/iam/authenticated-actor.js';
 import { IamAuthGuard } from '../../integrations/iam/iam-auth.guard.js';
 import { PermissionGuard } from '../../integrations/iam/permission.guard.js';
@@ -69,6 +73,37 @@ export class AccountController {
   ) {
     const query = new URLSearchParams(q).toString();
     return this.account.statement(r.actor.tenantId, query ? `?${query}` : '');
+  }
+  @Get('wallet/transactions/:transactionId')
+  @RequirePermission('wallet.read')
+  transaction(
+    @Req() r: ActorRequest,
+    @Param('transactionId') transactionId: string,
+  ) {
+    return this.account.transaction(r.actor.tenantId, transactionId);
+  }
+  @Get('wallet/transactions/:transactionId/receipt.:format')
+  @RequirePermission('wallet.read')
+  async receipt(
+    @Req() r: ActorRequest,
+    @Res() response: Response,
+    @Param('transactionId') transactionId: string,
+    @Param('format') format: string,
+  ) {
+    if (format !== 'pdf' && format !== 'svg')
+      throw new BadRequestException('Receipt format must be pdf or svg');
+    const receipt = await this.account.transactionReceipt(
+      r.actor.tenantId,
+      transactionId,
+      format,
+    );
+    response.setHeader('Content-Type', receipt.type);
+    response.setHeader(
+      'Content-Disposition',
+      `attachment; filename="pepsa-receipt-${transactionId}.${format}"`,
+    );
+    response.setHeader('Cache-Control', 'private, no-store');
+    response.send(receipt.body);
   }
   @Get('banks') @RequirePermission('wallet.read') banks() {
     return this.account.banks();
