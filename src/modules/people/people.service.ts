@@ -341,6 +341,13 @@ export class PeopleService {
       throw new NotFoundException('Dispatcher not found');
     if (!['DRAFT', 'REJECTED'].includes(dispatcher.latestRevision.status))
       throw new ConflictException('Dispatcher is not ready for submission');
+    if (
+      !dispatcher.latestRevision.encryptedGuarantorNin ||
+      !dispatcher.latestRevision.guarantorAddress.trim()
+    )
+      throw new BadRequestException(
+        'Guarantor NIN and address are required before submission',
+      );
     const clean = new Set(
       dispatcher.latestRevision.documents
         .filter((document) => document.status === 'CLEAN')
@@ -432,6 +439,15 @@ export class PeopleService {
     return this.safeRevision(revision);
   }
 
+  async dispatcherTenant(dispatcherId: string) {
+    const dispatcher = await this.db.dispatcher.findUnique({
+      where: { id: dispatcherId },
+      select: { tenantId: true },
+    });
+    if (!dispatcher) throw new NotFoundException('Dispatcher not found');
+    return dispatcher.tenantId;
+  }
+
   async reviewDocument(
     revisionId: string,
     documentId: string,
@@ -484,11 +500,19 @@ export class PeopleService {
     });
     if (!revision || revision.status !== 'UNDER_REVIEW')
       throw new ConflictException('Revision is not awaiting review');
+    if (
+      input.decision === 'APPROVE' &&
+      (!revision.encryptedGuarantorNin || !revision.guarantorAddress.trim())
+    )
+      throw new ConflictException(
+        'Dispatcher guarantor NIN and address must be supplied before approval',
+      );
     const approved = input.decision === 'APPROVE';
     const body = {
       dispatcherId: revision.dispatcherId,
       revisionId,
       status: approved ? 'APPROVED' : 'REJECTED',
+      riderProvisioningStatus: approved ? 'PENDING' : 'NOT_STARTED',
       decidedAt: new Date().toISOString(),
     };
     await this.db.$transaction(async (tx) => {
@@ -513,6 +537,34 @@ export class PeopleService {
             ? { latestRevisionId: revisionId }
             : { status: 'REJECTED', availability: false },
       });
+      if (approved) {
+        await tx.dispatcherProvisioningSaga.upsert({
+          where: {
+            dispatcherId_revisionId: {
+              dispatcherId: revision.dispatcherId,
+              revisionId,
+            },
+          },
+          update: {
+            status: 'PENDING',
+            nextAttemptAt: new Date(),
+            lastErrorCode: null,
+          },
+          create: {
+            dispatcherId: revision.dispatcherId,
+            revisionId,
+            status: 'PENDING',
+            nextAttemptAt: new Date(),
+          },
+        });
+        await tx.dispatcher.update({
+          where: { id: revision.dispatcherId },
+          data: {
+            riderProvisioningStatus: 'PENDING',
+            riderProvisioningErrorCode: null,
+          },
+        });
+      }
       await tx.idempotencyRecord.create({
         data: {
           scope,
@@ -539,6 +591,13 @@ export class PeopleService {
   private validateDispatcher(input: CreateDispatcherDto) {
     if (!input.termsAccepted)
       throw new BadRequestException('Terms must be accepted');
+    if (!input.guarantorAddress?.trim())
+      throw new BadRequestException('Guarantor address is required');
+    if (
+      input.guarantorNin !== '__PRESERVE__' &&
+      !/^\d{11}$/.test(input.guarantorNin)
+    )
+      throw new BadRequestException('Guarantor NIN must be exactly 11 digits');
     if (
       motorized.has(input.vehicleType) &&
       (!input.vehicleBrand?.trim() || !input.plateNumber?.trim())
@@ -587,7 +646,15 @@ export class PeopleService {
       guarantorName: input.guarantorName.trim(),
       guarantorPhone: input.guarantorPhone.trim(),
       guarantorEmail: input.guarantorEmail?.trim().toLowerCase(),
-      guarantorAddress: input.guarantorAddress?.trim(),
+      guarantorAddress: input.guarantorAddress.trim(),
+      encryptedGuarantorNin:
+        input.guarantorNin === '__PRESERVE__' && source
+          ? String(source.encryptedGuarantorNin)
+          : encryptSensitive(input.guarantorNin),
+      guarantorNinFingerprint:
+        input.guarantorNin === '__PRESERVE__' && source
+          ? String(source.guarantorNinFingerprint)
+          : sha256(input.guarantorNin),
       revenueSharePct: new Prisma.Decimal(input.revenueSharePct),
     };
   }
@@ -626,9 +693,11 @@ export class PeopleService {
       guarantorPhone: input.guarantorPhone ?? String(source.guarantorPhone),
       guarantorEmail:
         input.guarantorEmail ?? (source.guarantorEmail as string | undefined),
+      guarantorNin:
+        input.guarantorNin ??
+        (source.encryptedGuarantorNin ? '__PRESERVE__' : ''),
       guarantorAddress:
-        input.guarantorAddress ??
-        (source.guarantorAddress as string | undefined),
+        input.guarantorAddress ?? String(source.guarantorAddress ?? ''),
       revenueSharePct:
         input.revenueSharePct ?? Number(String(source.revenueSharePct)),
     } as CreateDispatcherDto;
@@ -687,12 +756,15 @@ export class PeopleService {
     const {
       encryptedIdentityNo: _,
       identityFingerprint: __,
+      encryptedGuarantorNin: ___,
+      guarantorNinFingerprint: ____,
       documents,
       ...safe
     } = revision;
     return {
       ...safe,
       identityNumberMasked: '••••••••',
+      guarantorNinMasked: revision.encryptedGuarantorNin ? '••••••••' : null,
       revenueSharePct: String(safe.revenueSharePct),
       documents: Array.isArray(documents)
         ? documents.map((value) => {

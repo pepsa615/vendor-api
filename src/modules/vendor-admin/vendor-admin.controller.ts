@@ -21,6 +21,7 @@ import {
 import { VendorAdminService } from './vendor-admin.service.js';
 import { AdminReviewService } from '../admin-review/admin-review.service.js';
 import { PeopleService } from '../people/people.service.js';
+import { DispatcherProvisioningService } from '../dispatcher-provisioning/dispatcher-provisioning.service.js';
 
 type AdminRequest = Request & { adminActor: AdminActor };
 
@@ -45,6 +46,8 @@ const operations = [
   ['dispatcher-review-detail', 'GET', 'vendor.dispatchers.review', 'high'],
   ['dispatcher-review-document', 'GET', 'vendor.dispatchers.review', 'high'],
   ['dispatcher-review', 'POST', 'vendor.dispatchers.review', 'high'],
+  ['rider-provisioning-list', 'GET', 'vendor.dispatchers.review', 'high'],
+  ['rider-provisioning-retry', 'POST', 'vendor.dispatchers.review', 'high'],
   ['vendor-suspend', 'POST', 'vendor.businesses.status', 'critical'],
   ['vendor-reactivate', 'POST', 'vendor.businesses.status', 'critical'],
   ['vendor-dispatch-freeze', 'POST', 'vendor.businesses.status', 'critical'],
@@ -73,6 +76,7 @@ export class VendorAdminController {
     private readonly service: VendorAdminService,
     private readonly reviews: AdminReviewService,
     private readonly people: PeopleService,
+    private readonly riderProvisioning: DispatcherProvisioningService,
   ) {}
 
   @Get('health') health() {
@@ -154,6 +158,8 @@ export class VendorAdminController {
     }
     if (operation === 'provisioning-list')
       return this.service.provisioningList(request.adminActor.vendorIds);
+    if (operation === 'rider-provisioning-list')
+      return this.riderProvisioning.list(request.adminActor.vendorIds);
     if (operation === 'performance-read')
       return this.service.performance(
         Number(params.get('days') ?? 30),
@@ -223,6 +229,12 @@ export class VendorAdminController {
         ),
       );
     }
+    if (operation === 'rider-provisioning-retry') {
+      const tenantId = await this.people.dispatcherTenant(
+        String(body.dispatcherId ?? ''),
+      );
+      this.assertVendorScope(request.adminActor, tenantId);
+    }
     const capability = operations.find(
       ([key, method]) => key === operation && method === 'POST',
     );
@@ -276,6 +288,8 @@ export class VendorAdminController {
             },
             request.adminActor.requestId,
           );
+        if (operation === 'rider-provisioning-retry')
+          return this.riderProvisioning.retry(String(body.dispatcherId ?? ''));
         if (operation === 'vendor-suspend')
           return this.service.setStatus(
             vendorId,

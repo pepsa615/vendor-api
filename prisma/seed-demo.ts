@@ -369,6 +369,8 @@ async function main() {
         guarantorPhone: '080SEED2999',
         guarantorEmail: 'guarantor@seed.pepsa.local',
         guarantorAddress: '14 Seed Close, Surulere',
+        encryptedGuarantorNin: `seed-enc-guarantor-${spec.phone}`,
+        guarantorNinFingerprint: hash(`guarantor-${spec.phone}`),
         revenueSharePct: new Prisma.Decimal(spec.revenueSharePct),
         submittedAt: new Date(),
         decidedAt: spec.status === 'UNDER_REVIEW' ? null : new Date(),

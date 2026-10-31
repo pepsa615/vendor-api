@@ -259,3 +259,21 @@ Append entries; never rewrite historical evidence.
 - Vendor-assisted order creation now supports independent saved sender and receiver identities plus idempotent optional contact saving while retaining immutable order contact snapshots.
 - Added capability-gated prepaid multi-order submission to Pepsa Order. Contract validation occurs before Payment debit; ambiguous outcomes use external-reference inquiry and definitive failures retain the compensation path.
 - Added the additive manifest-assignment migration and regenerated the Vendor OpenAPI contract.
+
+## 2026-10-31 — Dispatcher approval to Rider provisioning integration
+
+- Successful Admin dispatcher approval now atomically creates a leased, idempotent Rider provisioning saga without making a network call inside the review transaction.
+- Added canonical dispatcher-to-rider identity fields, provisioning status/error evidence, bounded retry/manual-review behavior, and periodic Rider activation-state synchronization.
+- Extended the Rider adapter with a separately authenticated create/link contract. Production now requires an isolated Rider provisioning token in addition to the read-only fleet token.
+- Added destination-authorized Admin capabilities for a typed Rider provisioning queue and governed retry action. The Admin dispatcher screen renders human-readable status, attempts and actions without raw JSON.
+- Rider Backend now owns idempotent Vendor/rider upsert, identity-conflict protection, approved-revision monotonicity, single-use activation links, and formal Vendor relations.
+- Accepted orders now create persistent Rider assignments. Signed Pepsa Order terminal events close assignments, and the fleet snapshot derives active load from assignment rows instead of the legacy one-way counter.
+- Verification completed on a temporary Node 22 runtime: Rider Prisma generation, typecheck and production build; Vendor Prisma generation, typecheck, 55 existing tests plus 2 focused Rider-adapter contract tests and lint; Admin backend typecheck and all 51 tests; Admin frontend typecheck, all 5 tests, lint and production build.
+
+## 2026-10-31 — Mandatory dispatcher guarantor identity and address
+
+- Dispatcher creation now requires the guarantor's 11-digit NIN and full address in addition to name and phone. Server validation remains authoritative even if a client bypasses the Vendor form.
+- Guarantor NIN is encrypted at rest and separately fingerprinted; plaintext and fingerprints are removed from all read models. Vendor and Admin review screens receive only a masked presence indicator.
+- Existing revisions remain readable after migration, but a legacy revision missing either field cannot be resubmitted or approved until the Vendor supplies the missing information. Profile editing supports that correction without requiring an already stored NIN to be re-entered.
+- Added the dispatcher-guarantor compliance migration, demo seed fields, Vendor create/edit/detail UI, Admin review labels and focused validation/redaction coverage.
+- Verification: Vendor backend Prisma validation/generation, typecheck, lint and all 60 tests passed; Vendor frontend typecheck and production bundle passed; Admin frontend typecheck, 5 tests and production build passed. The full Vendor frontend unit run remains affected by the repository's existing Node 22 ESM loader incompatibility in React Router/Redux dependencies; 11 unaffected tests passed before the three suites failed during import.

@@ -5,9 +5,16 @@ import { ProvisioningModule } from '../provisioning/provisioning.module.js';
 import { PeopleModule } from '../people/people.module.js';
 import { VendorAdminController } from './vendor-admin.controller.js';
 import { VendorAdminService } from './vendor-admin.service.js';
+import { DispatcherProvisioningModule } from '../dispatcher-provisioning/dispatcher-provisioning.module.js';
 
 @Module({
-  imports: [AdminReviewModule, FeesModule, ProvisioningModule, PeopleModule],
+  imports: [
+    AdminReviewModule,
+    FeesModule,
+    ProvisioningModule,
+    PeopleModule,
+    DispatcherProvisioningModule,
+  ],
   controllers: [VendorAdminController],
   providers: [VendorAdminService],
 })

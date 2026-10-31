@@ -73,7 +73,8 @@ export class CreateDispatcherDto {
   @IsString() @MinLength(2) @MaxLength(120) guarantorName: string;
   @IsString() @MinLength(7) @MaxLength(24) guarantorPhone: string;
   @IsOptional() @IsEmail() guarantorEmail?: string;
-  @IsOptional() @IsString() @MaxLength(240) guarantorAddress?: string;
+  @IsString() @Matches(/^\d{11}$/) guarantorNin: string;
+  @IsString() @MinLength(4) @MaxLength(240) guarantorAddress: string;
   @IsNumber({ maxDecimalPlaces: 2 })
   @Min(0.01)
   @Max(100)

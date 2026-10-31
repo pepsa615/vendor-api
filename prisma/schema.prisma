@@ -141,6 +141,16 @@ enum DispatcherRevisionStatus {
   REJECTED
 }
 
+enum RiderProvisioningStatus {
+  NOT_STARTED
+  PENDING
+  IN_PROGRESS
+  ACTIVE
+  FAILED_RETRYABLE
+  MANUAL_REVIEW
+  SUSPENDED
+}
+
 enum OrderSource {
   VENDOR_DIRECT
   CUSTOMER_LINK
@@ -599,25 +609,53 @@ model Customer {
 }
 
 model Dispatcher {
-  id                  String                        @id @default(uuid()) @db.Uuid
-  tenantId            String                        @db.Uuid
-  status              DispatcherStatus              @default(DRAFT)
-  availability        Boolean                       @default(false)
-  approvedRevisionId  String?                       @unique @db.Uuid
-  latestRevisionId    String?                       @unique @db.Uuid
-  totalOrdersPicked   Int                           @default(0)
-  createdAt           DateTime                      @default(now())
-  updatedAt           DateTime                      @updatedAt
-  vendor              Vendor                        @relation(fields: [tenantId], references: [id], onDelete: Restrict)
-  revisions           DispatcherRevision[]          @relation("DispatcherRevisions")
-  approvedRevision    DispatcherRevision?           @relation("ApprovedDispatcherRevision", fields: [approvedRevisionId], references: [id], onDelete: SetNull)
-  latestRevision      DispatcherRevision?           @relation("LatestDispatcherRevision", fields: [latestRevisionId], references: [id], onDelete: SetNull)
-  dispatches          Dispatch[]
-  manifestAssignments ManifestTransportAssignment[]
+  id                         String                        @id @default(uuid()) @db.Uuid
+  tenantId                   String                        @db.Uuid
+  status                     DispatcherStatus              @default(DRAFT)
+  availability               Boolean                       @default(false)
+  approvedRevisionId         String?                       @unique @db.Uuid
+  latestRevisionId           String?                       @unique @db.Uuid
+  totalOrdersPicked          Int                           @default(0)
+  riderUserId                String?                       @unique @db.Uuid
+  riderProvisioningStatus    RiderProvisioningStatus       @default(NOT_STARTED)
+  riderProvisionedAt         DateTime?
+  riderProvisioningErrorCode String?
+  riderAccountStatus         String?
+  riderLastSyncedAt          DateTime?
+  createdAt                  DateTime                      @default(now())
+  updatedAt                  DateTime                      @updatedAt
+  vendor                     Vendor                        @relation(fields: [tenantId], references: [id], onDelete: Restrict)
+  revisions                  DispatcherRevision[]          @relation("DispatcherRevisions")
+  approvedRevision           DispatcherRevision?           @relation("ApprovedDispatcherRevision", fields: [approvedRevisionId], references: [id], onDelete: SetNull)
+  latestRevision             DispatcherRevision?           @relation("LatestDispatcherRevision", fields: [latestRevisionId], references: [id], onDelete: SetNull)
+  dispatches                 Dispatch[]
+  manifestAssignments        ManifestTransportAssignment[]
+  riderProvisioningSagas     DispatcherProvisioningSaga[]
 
   @@index([tenantId, status])
   @@index([tenantId, availability])
   @@map("dispatchers")
+}
+
+model DispatcherProvisioningSaga {
+  id             String                  @id @default(uuid()) @db.Uuid
+  dispatcherId   String                  @db.Uuid
+  revisionId     String                  @db.Uuid
+  status         RiderProvisioningStatus @default(PENDING)
+  attempts       Int                     @default(0)
+  nextAttemptAt  DateTime?
+  leaseExpiresAt DateTime?
+  lastErrorCode  String?
+  lastRequestId  String?
+  completedAt    DateTime?
+  createdAt      DateTime                @default(now())
+  updatedAt      DateTime                @updatedAt
+  dispatcher     Dispatcher              @relation(fields: [dispatcherId], references: [id], onDelete: Restrict)
+
+  @@unique([dispatcherId, revisionId])
+  @@index([status, nextAttemptAt])
+  @@index([leaseExpiresAt])
+  @@map("dispatcher_provisioning_sagas")
 }
 
 model Dispatch {
@@ -755,7 +793,9 @@ model DispatcherRevision {
   guarantorName           String
   guarantorPhone          String
   guarantorEmail          String?
-  guarantorAddress        String?
+  guarantorAddress        String
+  encryptedGuarantorNin   String?
+  guarantorNinFingerprint String?
   revenueSharePct         Decimal                       @db.Decimal(5, 2)
   submittedAt             DateTime?
   decidedAt               DateTime?

@@ -53,7 +53,13 @@ const schema = z.object({
   DISPATCH_WEBHOOK_KEY_ID: z.string().min(1).optional(),
   RIDER_FLEET_BASE_URL: z.url().optional(),
   FLEET_API_TOKEN: z.string().min(16).optional(),
+  RIDER_PROVISIONING_API_TOKEN: z.string().min(16).optional(),
   RIDER_FLEET_TIMEOUT_MS: z.coerce.number().int().positive().default(5000),
+  RIDER_PROVISIONING_INTERVAL_MS: z.coerce
+    .number()
+    .int()
+    .positive()
+    .default(15000),
   SWAGGER_ENABLED: z.enum(['true', 'false']).default('false'),
 });
 
@@ -91,6 +97,9 @@ export function loadEnvironment(input: NodeJS.ProcessEnv): Environment {
       !parsed.data.ADMIN_VENDOR_SIGNING_KEY_ID ||
       !parsed.data.DISPATCH_WEBHOOK_SECRET ||
       !parsed.data.DISPATCH_WEBHOOK_KEY_ID ||
+      !parsed.data.RIDER_FLEET_BASE_URL ||
+      !parsed.data.FLEET_API_TOKEN ||
+      !parsed.data.RIDER_PROVISIONING_API_TOKEN ||
       (parsed.data.DEPLOYMENT_ENVIRONMENT !== 'production' &&
         parsed.data.DEPLOYMENT_ENVIRONMENT !== 'staging'))
   ) {

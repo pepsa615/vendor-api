@@ -25,6 +25,7 @@ import { NotificationsModule } from './modules/notifications/notifications.modul
 import { FeesModule } from './modules/fees/fees.module.js';
 import { ProvisioningModule } from './modules/provisioning/provisioning.module.js';
 import { VendorAdminModule } from './modules/vendor-admin/vendor-admin.module.js';
+import { DispatcherProvisioningModule } from './modules/dispatcher-provisioning/dispatcher-provisioning.module.js';
 
 @Module({
   imports: [
@@ -52,6 +53,7 @@ import { VendorAdminModule } from './modules/vendor-admin/vendor-admin.module.js
     NotificationsModule,
     FeesModule,
     ProvisioningModule,
+    DispatcherProvisioningModule,
     VendorAdminModule,
     HealthModule,
   ],
