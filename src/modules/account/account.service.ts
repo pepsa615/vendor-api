@@ -560,7 +560,7 @@ export class AccountService {
       body: JSON.stringify({
         biller_id: input.billerId,
         beneficiary_identifier: input.beneficiaryIdentifier,
-        fields: input.fields,
+        amount: this.money(input.amountMinor),
       }),
     });
   }
@@ -585,7 +585,6 @@ export class AccountService {
         product_id: safe.productId,
         biller_id: safe.billerId,
         validation_reference: safe.validationReference,
-        customer_fields: safe.customerFields,
       }),
     });
   }
