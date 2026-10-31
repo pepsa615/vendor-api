@@ -56,5 +56,5 @@ export class VasDto {
 export class ValidateBillerDto {
   @IsString() billerId: string;
   @IsString() beneficiaryIdentifier: string;
-  @IsObject() fields: Record<string, string>;
+  @IsInt() @Min(1) amountMinor: number;
 }
