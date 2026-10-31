@@ -25,6 +25,10 @@ import type {
   VerifyPinDto,
 } from './account.dto.js';
 import { NotificationsService } from '../notifications/notifications.service.js';
+import {
+  TransactionReceiptService,
+  type ReceiptTransaction,
+} from './transaction-receipt.service.js';
 
 @Injectable()
 export class AccountService {
@@ -32,6 +36,7 @@ export class AccountService {
     private readonly db: PrismaService,
     private readonly pay: PaymentService,
     private readonly audit: AuditService,
+    private readonly receipts: TransactionReceiptService,
     private readonly notifications?: NotificationsService,
   ) {}
   private money(minor: number) {
@@ -476,6 +481,73 @@ export class AccountService {
   async statement(tenantId: string, query: string) {
     const v = await this.ensureProvisioned(tenantId);
     return this.pay.transactions(v.paymentWalletId!, query);
+  }
+  async transaction(tenantId: string, transactionId: string) {
+    const vendor = await this.ensureProvisioned(tenantId);
+    const transaction = await this.pay.transaction(transactionId);
+    if (transaction?.wallet_id !== vendor.paymentWalletId)
+      throw new NotFoundException('Transaction not found');
+    return {
+      ...transaction,
+      vendor_name: vendor.businessName,
+      receipt_available: true,
+    };
+  }
+  async transactionReceipt(
+    tenantId: string,
+    transactionId: string,
+    format: 'pdf' | 'svg',
+  ) {
+    const transaction = await this.transaction(tenantId, transactionId);
+    const amount = String(transaction.amount ?? '0.00');
+    const charges = String(transaction.charges ?? '0.00');
+    const stampDuty = String(transaction.stamp_duty ?? '0.00');
+    const total = (
+      Number(amount) +
+      Number(charges) +
+      Number(stampDuty)
+    ).toFixed(2);
+    const destination = transaction.destination as
+      | { account_name?: string; account_number?: string; bank_name?: string }
+      | null
+      | undefined;
+    const receipt: ReceiptTransaction = {
+      transactionId: String(transaction.transaction_id),
+      vendorName: String(transaction.vendor_name),
+      status: String(transaction.status ?? 'unknown'),
+      type: String(transaction.type ?? 'transaction').replaceAll('_', ' '),
+      direction: String(transaction.direction ?? ''),
+      amount,
+      charges,
+      stampDuty,
+      total,
+      narration: String(transaction.narration ?? '-'),
+      recipient:
+        [
+          destination?.account_name,
+          destination?.account_number,
+          destination?.bank_name,
+        ]
+          .filter(Boolean)
+          .join(' - ') ||
+        String(transaction.counterparty_account_number ?? '-'),
+      providerReference: String(transaction.provider_reference ?? '-'),
+      createdAt: this.receiptDate(transaction.created_at),
+      completedAt: this.receiptDate(transaction.executed_at),
+    };
+    return format === 'pdf'
+      ? { body: this.receipts.pdf(receipt), type: 'application/pdf' }
+      : { body: this.receipts.svg(receipt), type: 'image/svg+xml' };
+  }
+  private receiptDate(value: unknown) {
+    if (!value) return '-';
+    const date = new Date(String(value));
+    if (Number.isNaN(date.getTime())) return '-';
+    return new Intl.DateTimeFormat('en-NG', {
+      dateStyle: 'medium',
+      timeStyle: 'medium',
+      timeZone: 'Africa/Lagos',
+    }).format(date);
   }
   vasCatalog(path: string) {
     if (!path || path.includes('..') || path.startsWith('/'))
