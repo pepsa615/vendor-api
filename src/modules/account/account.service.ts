@@ -561,6 +561,9 @@ export class AccountService {
         biller_id: input.billerId,
         beneficiary_identifier: input.beneficiaryIdentifier,
         amount: this.money(input.amountMinor),
+        ...(input.fields && Object.keys(input.fields).length > 0
+          ? { fields: input.fields }
+          : {}),
       }),
     });
   }
@@ -585,6 +588,9 @@ export class AccountService {
         product_id: safe.productId,
         biller_id: safe.billerId,
         validation_reference: safe.validationReference,
+        ...(safe.customerFields && Object.keys(safe.customerFields).length > 0
+          ? { customer_fields: safe.customerFields }
+          : {}),
       }),
     });
   }

@@ -57,4 +57,6 @@ export class ValidateBillerDto {
   @IsString() billerId: string;
   @IsString() beneficiaryIdentifier: string;
   @IsInt() @Min(1) amountMinor: number;
+  /** Package/item selections (e.g. itemId bouquet) forwarded to Pepsa Payment. */
+  @IsOptional() @IsObject() fields?: Record<string, string>;
 }

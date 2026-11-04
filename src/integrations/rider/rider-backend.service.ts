@@ -34,6 +34,18 @@ export type ProvisionRiderInput = {
     | 'TRUCK'
     | 'LONG_TRUCK';
   sourceUpdatedAt: string;
+  idType?: string;
+  idNumber?: string;
+  idExpire?: string;
+  vehicleModel?: string;
+  plateNo?: string;
+  ownersName?: string;
+  licenceExpireDate?: string;
+  revenueSharePct?: number | string;
+  nokName?: string;
+  nokRelationship?: string;
+  nokPhone?: string;
+  nokAddress?: string;
 };
 
 export type ProvisionRiderResult = {
