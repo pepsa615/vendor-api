@@ -1,6 +1,7 @@
 import { Injectable, OnModuleDestroy, OnModuleInit } from '@nestjs/common';
 import nodemailer from 'nodemailer';
 import { PrismaService } from '../../core/database/prisma.service.js';
+import { wrapPepsaEmail } from './pepsa-email-layout.js';
 
 @Injectable()
 export class EmailWorker implements OnModuleInit, OnModuleDestroy {
@@ -55,6 +56,7 @@ export class EmailWorker implements OnModuleInit, OnModuleDestroy {
         to: item.recipient,
         subject: content.subject,
         text: content.text,
+        html: content.html,
       });
       await this.db.emailOutbox.update({
         where: { id: item.id },
@@ -88,28 +90,58 @@ export class EmailWorker implements OnModuleInit, OnModuleDestroy {
     payload: Record<string, string>,
     invitationUrl: string,
   ) {
-    if (template === 'verify-email')
-      return {
-        subject: 'Verify your Pepsa Vendor account',
-        text: `Your verification code is ${payload.code}. It expires in 15 minutes.`,
-      };
-    if (template === 'reset-transaction-pin')
-      return {
-        subject: 'Reset your transaction PIN',
-        text: `Your reset code is ${payload.code}. It expires in 15 minutes.`,
-      };
+    if (template === 'verify-email') {
+      return wrapPepsaEmail({
+        title: 'Verify your Pepsa Vendor account',
+        greeting: 'Hello,',
+        preheader: `Your verification code is ${payload.code ?? ''}`,
+        paragraphs: [
+          'Use this code to verify your Pepsa Vendor account.',
+          `Verification code: **${payload.code ?? ''}**`,
+          'This code expires in 15 minutes.',
+        ],
+        footerNote: 'If you did not create this account, you can ignore this email.',
+        textBody: '',
+      });
+    }
+    if (template === 'reset-transaction-pin') {
+      return wrapPepsaEmail({
+        title: 'Reset your transaction PIN',
+        greeting: 'Hello,',
+        preheader: `Your PIN reset code is ${payload.code ?? ''}`,
+        paragraphs: [
+          'Use this code to reset your transaction PIN.',
+          `Reset code: **${payload.code ?? ''}**`,
+          'This code expires in 15 minutes.',
+        ],
+        footerNote: 'If you did not request a PIN reset, contact support immediately.',
+        textBody: '',
+      });
+    }
     if (template === 'workflow-notification') {
       const url = payload.href
         ? `${process.env.FRONTEND_URL ?? 'http://localhost:5173'}${payload.href}`
         : '';
-      return {
-        subject: payload.title || 'Pepsa Vendor update',
-        text: `${payload.body ?? ''}${url ? `\n\nView: ${url}` : ''}`,
-      };
+      return wrapPepsaEmail({
+        title: payload.title || 'Pepsa Vendor update',
+        greeting: 'Hello,',
+        preheader: payload.title || 'Pepsa Vendor update',
+        paragraphs: [payload.body || 'You have a new update in Pepsa Vendor.'],
+        cta: url ? { label: 'Open in Pepsa Vendor', url } : undefined,
+        textBody: '',
+      });
     }
-    return {
-      subject: 'You are invited to Pepsa Vendor',
-      text: `Complete your staff invitation: ${invitationUrl}`,
-    };
+    return wrapPepsaEmail({
+      title: 'You are invited to Pepsa Vendor',
+      greeting: 'Hello,',
+      preheader: 'Complete your staff invitation',
+      paragraphs: [
+        'You have been invited to join a Pepsa Vendor workspace.',
+        'Use the secure button below to complete your invitation.',
+      ],
+      cta: { label: 'Accept invitation', url: invitationUrl },
+      footerNote: 'If you did not expect this invitation, you can ignore this email.',
+      textBody: '',
+    });
   }
 }
