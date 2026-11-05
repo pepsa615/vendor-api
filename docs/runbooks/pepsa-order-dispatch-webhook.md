@@ -8,7 +8,7 @@ Without an ACTIVE **PARTNER** subscription pointed at the vendor API, runway sta
 
 ## Register (sandbox / production)
 
-1. As the vendor partner in pepsa-order, create a PARTNER webhook subscription with event types:
+1. As the vendor partner in pepsa-order, `POST /api/v1/webhook-subscriptions` with event types:
    - `dispatch.assigned`
    - `pickup.confirmed`
    - `delivery.confirmed`
@@ -27,7 +27,7 @@ Automated — not manual docs:
 | `OWN_FLEET` | `commerceDebit` vendor main for `payoutAmountMinor` → `commerceCredit` linked rider main |
 | `GENERAL_POOL` | `commerceCredit` assigned rider for `fundingRequiredMinor` (vendor prepaid at create) |
 
-Requires `COMMERCE_CREDIT_ENABLED=true` on pepsa-payment when `NODE_ENV=production`. Idempotency keys: `dispatch-rider-debit:{id}`, `dispatch-rider-credit:{id}`, `dispatch-open-rider-credit:{id}`.
+Requires `COMMERCE_CREDIT_ENABLED=true` on pepsa-payment when `NODE_ENV=production`. Rider credits use `PEPSA_RIDER_PAYMENT_URL` / `PEPSA_RIDER_PAYMENT_API_KEY` (RiderApp `WALLET_API_*`) when riders are on a different payment platform than the vendor. Idempotency keys: `dispatch-rider-debit:{id}`, `dispatch-rider-credit:{id}`, `dispatch-open-rider-credit:{id}`.
 
 ## Mapping
 

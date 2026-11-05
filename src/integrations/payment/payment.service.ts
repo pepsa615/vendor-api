@@ -14,9 +14,15 @@ export class PaymentService {
 
   constructor(private readonly config: ConfigService) {}
 
-  private async request<T>(path: string, init: RequestInit = {}): Promise<T> {
-    const base = this.config.get<string>('PEPSA_PAYMENT_URL');
-    const key = this.config.get<string>('PEPSA_PAYMENT_API_KEY');
+  private async request<T>(
+    path: string,
+    init: RequestInit = {},
+    opts?: { baseUrl?: string; apiKey?: string },
+  ): Promise<T> {
+    const base =
+      opts?.baseUrl ?? this.config.get<string>('PEPSA_PAYMENT_URL');
+    const key =
+      opts?.apiKey ?? this.config.get<string>('PEPSA_PAYMENT_API_KEY');
     if (!base || !key)
       throw new ServiceUnavailableException('Payment service is unavailable');
     try {
@@ -152,13 +158,26 @@ export class PaymentService {
       body: JSON.stringify(input),
     });
   }
-  /** Main-wallet credit (rider payout). Requires COMMERCE_CREDIT_ENABLED on payment when NODE_ENV=production. */
+  /**
+   * Main-wallet credit for rider payouts. Uses PEPSA_RIDER_PAYMENT_* when set
+   * (riders are provisioned on the RiderApp payment platform key); otherwise
+   * falls back to the vendor PEPSA_PAYMENT_* credentials.
+   * Requires COMMERCE_CREDIT_ENABLED on payment when NODE_ENV=production.
+   */
   commerceCredit(input: unknown, key: string) {
-    return this.request<any>('commerce/credits', {
-      method: 'POST',
-      headers: { 'idempotency-key': key },
-      body: JSON.stringify(input),
-    });
+    const riderBase = this.config.get<string>('PEPSA_RIDER_PAYMENT_URL');
+    const riderKey = this.config.get<string>('PEPSA_RIDER_PAYMENT_API_KEY');
+    return this.request<any>(
+      'commerce/credits',
+      {
+        method: 'POST',
+        headers: { 'idempotency-key': key },
+        body: JSON.stringify(input),
+      },
+      riderBase && riderKey
+        ? { baseUrl: riderBase, apiKey: riderKey }
+        : undefined,
+    );
   }
   transaction(id: string) {
     return this.request<any>(`transactions/${id}`);

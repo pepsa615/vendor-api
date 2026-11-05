@@ -38,6 +38,9 @@ const schema = z.object({
   PEPSA_PAYMENT_API_KEY: z.string().min(16).optional(),
   PEPSA_PAYMENT_TIMEOUT_MS: z.coerce.number().int().positive().default(5000),
   PEPSA_PAYMENT_WEBHOOK_SECRET: z.string().min(32).optional(),
+  /** RiderApp payment platform (WALLET_API_*). Required when riders are not on the vendor payment key. */
+  PEPSA_RIDER_PAYMENT_URL: z.string().url().optional(),
+  PEPSA_RIDER_PAYMENT_API_KEY: z.string().min(1).optional(),
   PEPSA_PAYMENT_PLATFORM_ID: z.uuid().optional(),
   PAYMENT_VENDOR_SIGNING_KEY_ID: z.string().min(1).optional(),
   PEPSA_PAYMENT_EVENT_KEY_ID: z.string().min(1).optional(),
