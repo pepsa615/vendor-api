@@ -485,6 +485,12 @@ export class DispatchService {
             },
           });
         }
+        // Project fulfilment onto customer orders (ADR 0008 keeps VendorOrderStatus
+        // at READY/ACCEPTED; deliveryStatus carries M5 lifecycle for the UI).
+        await tx.order.updateMany({
+          where: { id: { in: payload.orderIds }, tenantId },
+          data: { deliveryStatus: 'PENDING_MATCH' },
+        });
         await tx.idempotencyRecord.create({
           data: {
             scope,
@@ -988,6 +994,14 @@ export class DispatchService {
           message: input.message,
           createdAt: occurredAt,
         },
+      });
+      // Keep customer-order deliveryStatus in lockstep with dispatch lifecycle so
+      // Customer Orders / Manifest UI leave READY/ACCEPTED and show fulfilment.
+      await tx.order.updateMany({
+        where: {
+          dispatchItems: { some: { dispatchId: dispatch.id } },
+        },
+        data: { deliveryStatus: input.type },
       });
       await tx.dispatchProviderEvent.update({
         where: { eventId: input.eventId },

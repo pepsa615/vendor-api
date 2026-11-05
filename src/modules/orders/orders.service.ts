@@ -69,7 +69,19 @@ export class OrdersService {
           checkout: true,
           batchItem: { select: { batchId: true } },
           manifestItems: { select: { id: true } },
-          dispatchItems: { select: { dispatchId: true } },
+          dispatchItems: {
+            select: {
+              dispatchId: true,
+              dispatch: {
+                select: {
+                  id: true,
+                  status: true,
+                  publicReference: true,
+                  mode: true,
+                },
+              },
+            },
+          },
         },
         orderBy: { createdAt: 'desc' },
         skip: (query.page - 1) * query.pageSize,
@@ -285,6 +297,18 @@ export class OrdersService {
         ));
     if (!allowed)
       throw new ConflictException('Order transition is not allowed');
+    // Once assigned to a dispatch, fulfilment owns the lifecycle — cancel is
+    // blocked even while VendorOrderStatus remains READY/ACCEPTED.
+    if (action === 'cancel') {
+      const linked = await this.db.dispatchItem.findFirst({
+        where: { orderId: id },
+        select: { dispatchId: true },
+      });
+      if (linked)
+        throw new ConflictException(
+          'Order is already on a dispatch and cannot be cancelled here',
+        );
+    }
     const status =
       action === 'ready'
         ? 'READY'

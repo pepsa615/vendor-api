@@ -143,6 +143,9 @@ describe('DispatchService.pepsaOrderEvent', () => {
           updateMany: vi.fn().mockResolvedValue({ count: 1 }),
         },
         dispatchEvent: { create: vi.fn() },
+        order: {
+          updateMany: vi.fn().mockResolvedValue({ count: 1 }),
+        },
       }),
     );
     await expect(
