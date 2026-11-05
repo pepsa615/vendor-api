@@ -32,6 +32,13 @@ import { FeesService } from '../fees/fees.service.js';
 import { PricingService } from '../pricing/pricing.service.js';
 
 const ACTIVE = ['PENDING_MATCH', 'PAIRED', 'PICKED_UP', 'DELIVERED'] as const;
+const STATUS_ORDER = [
+  'PENDING_MATCH',
+  'PAIRED',
+  'PICKED_UP',
+  'DELIVERED',
+  'COMPLETED',
+] as const;
 const transitions: Record<string, readonly string[]> = {
   PENDING_MATCH: ['PAIRED', 'CANCELLED'],
   PAIRED: ['PICKED_UP', 'CANCELLED'],
@@ -48,6 +55,13 @@ export const PEPSA_ORDER_DISPATCH_STATUS: Record<string, string> = {
 };
 export const canTransitionDispatch = (from: string, to: string) =>
   transitions[from]?.includes(to) ?? false;
+/** Intermediate statuses to apply when a webhook skips ahead (e.g. delivery without assign). */
+export const catchUpStatuses = (from: string, to: string): string[] => {
+  const start = STATUS_ORDER.indexOf(from as (typeof STATUS_ORDER)[number]);
+  const end = STATUS_ORDER.indexOf(to as (typeof STATUS_ORDER)[number]);
+  if (start < 0 || end < 0 || end <= start) return [];
+  return STATUS_ORDER.slice(start + 1, end + 1) as string[];
+};
 export const suggestedPayout = (amountMinor: number, revenueShareBps: number) =>
   Math.round((amountMinor * revenueShareBps) / 10_000);
 export const mapPepsaOrderEventToProvider = (
@@ -833,20 +847,49 @@ export class DispatchService {
     this.verifyPepsaOrderSignature(timestamp, signature, body);
     const mapped = mapPepsaOrderEventToProvider(body);
     if (!mapped) return { accepted: true, ignored: true };
-    if (mapped.type === 'COMPLETED') {
-      const current = await this.db.dispatch.findUnique({
-        where: { providerReference: mapped.providerReference },
-        select: { status: true },
-      });
-      if (current?.status === 'PICKED_UP') {
+    const current = await this.db.dispatch.findFirst({
+      where: {
+        OR: [
+          { providerReference: mapped.providerReference },
+          { publicReference: mapped.providerReference },
+          ...(body.data?.externalReference
+            ? [
+                { providerReference: body.data.externalReference },
+                {
+                  publicReference: body.data.externalReference.replace(
+                    /^OD-/,
+                    '',
+                  ),
+                },
+              ]
+            : []),
+        ],
+      },
+      select: { status: true, providerReference: true },
+    });
+    if (!current) {
+      throw new NotFoundException('Dispatch provider reference not found');
+    }
+    // Prefer the stored providerReference for subsequent writes.
+    const event = {
+      ...mapped,
+      providerReference: current.providerReference ?? mapped.providerReference,
+    };
+    if (
+      event.type !== 'LOCATION' &&
+      event.type !== 'CANCELLED' &&
+      !canTransitionDispatch(current.status, event.type)
+    ) {
+      const steps = catchUpStatuses(current.status, event.type);
+      for (const step of steps.slice(0, -1)) {
         await this.applyProviderEvent({
-          ...mapped,
-          eventId: `${mapped.eventId}:delivered`,
-          type: 'DELIVERED',
+          ...event,
+          eventId: `${event.eventId}:catchup:${step}`,
+          type: step,
         });
       }
     }
-    return this.applyProviderEvent(mapped);
+    return this.applyProviderEvent(event);
   }
 
   private async applyProviderEvent(input: DispatchProviderEventDto) {
@@ -859,8 +902,15 @@ export class DispatchService {
         throw new ConflictException('Event ID payload mismatch');
       return { accepted: true, duplicate: true };
     }
-    const dispatch = await this.db.dispatch.findUnique({
-      where: { providerReference: input.providerReference },
+    const dispatch = await this.db.dispatch.findFirst({
+      where: {
+        OR: [
+          { providerReference: input.providerReference },
+          // pepsa-order may key partner events by shipment id while some
+          // publishes historically stored the vendor externalReference.
+          { publicReference: input.providerReference },
+        ],
+      },
     });
     if (!dispatch)
       throw new NotFoundException('Dispatch provider reference not found');

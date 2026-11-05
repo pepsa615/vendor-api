@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   canTransitionDispatch,
+  catchUpStatuses,
   mapPepsaOrderEventToProvider,
   suggestedPayout,
 } from './dispatch.service.js';
@@ -14,6 +15,20 @@ describe('M5 dispatch policy', () => {
     expect(canTransitionDispatch('DELIVERED', 'COMPLETED')).toBe(true);
     expect(canTransitionDispatch('PICKED_UP', 'PAIRED')).toBe(false);
     expect(canTransitionDispatch('COMPLETED', 'CANCELLED')).toBe(false);
+  });
+
+  it('fills skipped statuses when a later webhook arrives first', () => {
+    expect(catchUpStatuses('PENDING_MATCH', 'COMPLETED')).toEqual([
+      'PAIRED',
+      'PICKED_UP',
+      'DELIVERED',
+      'COMPLETED',
+    ]);
+    expect(catchUpStatuses('PAIRED', 'DELIVERED')).toEqual([
+      'PICKED_UP',
+      'DELIVERED',
+    ]);
+    expect(catchUpStatuses('DELIVERED', 'PAIRED')).toEqual([]);
   });
 
   it('calculates exact minor-unit payout suggestions from basis points', () => {

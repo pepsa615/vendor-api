@@ -26,9 +26,13 @@ export class ApiExceptionFilter implements ExceptionFilter {
     const code =
       exception instanceof ApiError
         ? exception.code
-        : status >= 500
-          ? 'INTERNAL_ERROR'
-          : 'REQUEST_REJECTED';
+        : status === HttpStatus.SERVICE_UNAVAILABLE
+          ? 'UPSTREAM_UNAVAILABLE'
+          : status === HttpStatus.BAD_GATEWAY
+            ? 'UPSTREAM_ERROR'
+          : status >= 500
+            ? 'INTERNAL_ERROR'
+            : 'REQUEST_REJECTED';
     const clientMessage = resolveClientMessage(exception, status);
     const details =
       exception instanceof ApiError ? exception.details : undefined;
@@ -57,6 +61,14 @@ export class ApiExceptionFilter implements ExceptionFilter {
 }
 
 function resolveClientMessage(exception: unknown, status: number): string {
+  // Surface upstream/config failures (e.g. Pepsa Order unavailable) so operators
+  // can act; keep opaque messaging only for unexpected 500s.
+  if (
+    status === HttpStatus.SERVICE_UNAVAILABLE ||
+    status === HttpStatus.BAD_GATEWAY
+  ) {
+    return resolveInternalMessage(exception) || 'Upstream service unavailable';
+  }
   if (status >= 500) {
     return 'An unexpected error occurred';
   }
