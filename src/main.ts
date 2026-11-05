@@ -28,7 +28,11 @@ async function bootstrap() {
   app.use(new RequestLoggingMiddleware().use);
   app.enableCors({ origin: environment.CORS_ORIGINS, credentials: true });
   app.setGlobalPrefix('api', {
-    exclude: [{ path: 'internal/admin/v1/{*path}', method: RequestMethod.ALL }],
+    exclude: [
+      { path: 'internal/admin/v1/{*path}', method: RequestMethod.ALL },
+      // Rider-backend presence fan-out (no IAM session).
+      { path: 'internal/v1/{*path}', method: RequestMethod.ALL },
+    ],
   });
   app.enableVersioning({ type: VersioningType.URI, defaultVersion: '1' });
   app.useGlobalPipes(

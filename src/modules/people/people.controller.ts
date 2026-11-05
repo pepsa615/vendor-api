@@ -16,6 +16,7 @@ import {
 } from '@nestjs/common';
 import { FileInterceptor } from '@nestjs/platform-express';
 import { ApiBearerAuth, ApiConsumes, ApiTags } from '@nestjs/swagger';
+import { IsBoolean, IsOptional, IsString, MinLength } from 'class-validator';
 import type { Request } from 'express';
 import type { AuthenticatedActor } from '../../integrations/iam/authenticated-actor.js';
 import { IamAuthGuard } from '../../integrations/iam/iam-auth.guard.js';
@@ -36,6 +37,32 @@ import {
   type AdminActor,
 } from '../admin-review/admin-review.guard.js';
 import { RequireAdminPermission } from '../admin-review/admin-permission.decorator.js';
+import { RiderPresenceGuard } from './rider-presence.guard.js';
+
+class RiderPresenceDto {
+  @IsString()
+  @MinLength(1)
+  dispatcherId!: string;
+
+  @IsBoolean()
+  available!: boolean;
+
+  @IsOptional()
+  @IsString()
+  riderId?: string;
+
+  @IsOptional()
+  @IsString()
+  activity?: string;
+
+  @IsOptional()
+  @IsString()
+  schedule?: string | null;
+
+  @IsOptional()
+  @IsString()
+  observedAt?: string;
+}
 
 type ActorRequest = Request & { actor: AuthenticatedActor };
 type AdminRequest = Request & { adminActor: AdminActor };
@@ -157,6 +184,28 @@ export class DispatchersController {
       id,
       body.available,
     );
+  }
+}
+
+@ApiTags('Rider presence sync')
+@ApiBearerAuth()
+@UseGuards(RiderPresenceGuard)
+@Controller({ path: 'internal/v1/riders', version: VERSION_NEUTRAL })
+export class InternalRiderPresenceController {
+  constructor(private readonly people: PeopleService) {}
+
+  @Post('presence')
+  presence(@Body() body: RiderPresenceDto) {
+    if (typeof body?.available !== 'boolean' || !body?.dispatcherId?.trim()) {
+      throw new BadRequestException('dispatcherId and available are required');
+    }
+    return this.people.syncPresenceFromRider({
+      dispatcherId: body.dispatcherId.trim(),
+      available: body.available,
+      riderId: body.riderId,
+      schedule: body.schedule ?? null,
+      observedAt: body.observedAt,
+    });
   }
 }
 

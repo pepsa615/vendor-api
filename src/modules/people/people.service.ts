@@ -408,6 +408,53 @@ export class PeopleService {
     return { available };
   }
 
+  /**
+   * RiderApp presence is authoritative for linked dispatchers. Syncs
+   * Dispatcher.availability so vendor Open Dispatch / lists match rider toggle.
+   */
+  async syncPresenceFromRider(input: {
+    dispatcherId: string;
+    available: boolean;
+    riderId?: string;
+    schedule?: string | null;
+    observedAt?: string;
+  }) {
+    const dispatcher = await this.db.dispatcher.findFirst({
+      where: { id: input.dispatcherId },
+    });
+    if (!dispatcher) throw new NotFoundException('Dispatcher not found');
+    if (dispatcher.status !== 'APPROVED') {
+      return {
+        available: false,
+        synced: false,
+        reason: 'DISPATCHER_NOT_APPROVED',
+      };
+    }
+    if (dispatcher.availability === input.available) {
+      return {
+        available: input.available,
+        synced: true,
+        unchanged: true,
+      };
+    }
+    await this.db.dispatcher.update({
+      where: { id: dispatcher.id },
+      data: { availability: input.available },
+    });
+    await this.audit.record({
+      tenantId: dispatcher.tenantId,
+      actorId: input.riderId ?? 'rider-backend',
+      action: input.available ? 'dispatcher.online' : 'dispatcher.offline',
+      subjectId: dispatcher.id,
+      metadata: {
+        source: 'rider.presence_changed.v1',
+        schedule: input.schedule ?? null,
+        observedAt: input.observedAt ?? null,
+      },
+    });
+    return { available: input.available, synced: true, unchanged: false };
+  }
+
   reviewQueue() {
     return this.db.dispatcherRevision.findMany({
       where: { status: 'UNDER_REVIEW' },
