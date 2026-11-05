@@ -220,6 +220,23 @@ export class PepsaOrderDispatchAdapter extends DispatchProviderPort {
     // ambiguous submit is recovered by status inquiry, never blind retry.
   }
 
+  async resolveAssignedRider(providerReference: string) {
+    const base = this.required('PEPSA_ORDER_URL');
+    try {
+      const row = await this.request(`${base}/api/v1/orders/${providerReference}`, {
+        method: 'GET',
+        headers: this.headers(`assigned-rider:${providerReference}`),
+      });
+      const rider =
+        typeof row.assignedRiderExternalId === 'string'
+          ? row.assignedRiderExternalId.trim()
+          : '';
+      return rider || null;
+    } catch {
+      return null;
+    }
+  }
+
   private code(value: string) {
     return value
       .trim()

@@ -149,10 +149,8 @@ describe('DispatchService.pepsaOrderEvent', () => {
       service({
         dispatchProviderEvent: { findUnique: vi.fn().mockResolvedValue(null) },
         dispatch: {
-          findUnique: vi
-            .fn()
-            .mockResolvedValueOnce(dispatch)
-            .mockResolvedValue(dispatch),
+          findFirst: vi.fn().mockResolvedValue(dispatch),
+          findUnique: vi.fn().mockResolvedValue(dispatch),
         },
         $transaction: tx,
       }).pepsaOrderEvent(timestamp, signature, body),
@@ -168,7 +166,13 @@ describe('DispatchService.pepsaOrderEvent', () => {
         dispatchProviderEvent: {
           findUnique: vi.fn().mockResolvedValue({ payloadHash: 'other' }),
         },
-        dispatch: { findUnique: vi.fn() },
+        dispatch: {
+          findFirst: vi.fn().mockResolvedValue({
+            status: 'PENDING_MATCH',
+            providerReference: 'ship-1',
+          }),
+          findUnique: vi.fn(),
+        },
       }).pepsaOrderEvent(timestamp, signature, body),
     ).rejects.toBeInstanceOf(ConflictException);
   });

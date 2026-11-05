@@ -152,6 +152,14 @@ export class PaymentService {
       body: JSON.stringify(input),
     });
   }
+  /** Main-wallet credit (rider payout). Requires COMMERCE_CREDIT_ENABLED on payment when NODE_ENV=production. */
+  commerceCredit(input: unknown, key: string) {
+    return this.request<any>('commerce/credits', {
+      method: 'POST',
+      headers: { 'idempotency-key': key },
+      body: JSON.stringify(input),
+    });
+  }
   transaction(id: string) {
     return this.request<any>(`transactions/${id}`);
   }

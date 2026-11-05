@@ -1030,12 +1030,39 @@ export class DispatchService {
         vendor: true,
       },
     });
-    if (!dispatch || dispatch.mode !== 'OWN_FLEET') return;
+    if (!dispatch) return;
+    if (dispatch.mode === 'OWN_FLEET')
+      return this.settleOwnFleet(dispatch);
+    if (dispatch.mode === 'GENERAL_POOL')
+      return this.settleOpenDispatch(dispatch);
+  }
+
+  /**
+   * Own-fleet: debit vendor main wallet for the rider payout, credit the
+   * linked rider wallet. Vendor margin stays in the vendor main wallet
+   * (order proceeds already held there) — no separate settlement mint.
+   */
+  private async settleOwnFleet(dispatch: {
+    id: string;
+    tenantId: string;
+    publicReference: string;
+    currency: string;
+    dispatcherId: string | null;
+    payoutAmountMinor: number | null;
+    providerReference: string | null;
+    items: Array<{ order: { amountMinor: number | null } }>;
+    dispatcher: {
+      riderUserId: string | null;
+      approvedRevision: { firstName: string; lastName: string } | null;
+    } | null;
+    vendor: { externalCheckoutUserId: string | null };
+  }) {
     const total = dispatch.items.reduce(
       (sum, item) => sum + (item.order.amountMinor ?? 0),
       0,
     );
-    const earnings = Math.max(0, total - (dispatch.payoutAmountMinor ?? 0));
+    const payout = Math.max(0, dispatch.payoutAmountMinor ?? 0);
+    const earnings = Math.max(0, total - payout);
     const entry = await this.db.vendorSettlementEntry.upsert({
       where: {
         tenantId_source_sourceReference: {
@@ -1058,24 +1085,147 @@ export class DispatchService {
         currency: dispatch.currency,
       },
     });
-    if (!dispatch.vendor.externalCheckoutUserId || earnings === 0) return;
+    if (entry.status === 'COMPLETED') return;
+    if (payout === 0) {
+      await this.db.vendorSettlementEntry.update({
+        where: { id: entry.id },
+        data: { status: 'COMPLETED', completedAt: new Date() },
+      });
+      return;
+    }
+    if (!dispatch.vendor.externalCheckoutUserId) {
+      await this.db.vendorSettlementEntry.update({
+        where: { id: entry.id },
+        data: { status: 'FAILED' },
+      });
+      return;
+    }
+    const riderExternalId =
+      dispatch.dispatcher?.riderUserId ??
+      (dispatch.providerReference
+        ? await this.provider.resolveAssignedRider(dispatch.providerReference)
+        : null);
+    if (!riderExternalId) {
+      await this.db.vendorSettlementEntry.update({
+        where: { id: entry.id },
+        data: { status: 'FAILED' },
+      });
+      return;
+    }
+    const amount = (payout / 100).toFixed(2);
     try {
-      const result = await this.payment.settlementCredit(
+      const debit = await this.payment.commerceDebit(
         {
           external_user_id: dispatch.tenantId,
-          amount: (earnings / 100).toFixed(2),
+          amount,
           currency: dispatch.currency,
-          source_reference: dispatch.publicReference,
-          source_type: 'rider_fulfilled',
-          metadata: { dispatchId: dispatch.id },
+          narration: `Own-fleet rider payout ${dispatch.publicReference}`,
+          reference: dispatch.publicReference,
+          charge_code: 'OWN_FLEET_RIDER_PAYOUT',
         },
-        `dispatch-settlement:${dispatch.id}`,
+        `dispatch-rider-debit:${dispatch.id}`,
+      );
+      const credit = await this.payment.commerceCredit(
+        {
+          external_user_id: riderExternalId,
+          amount,
+          currency: dispatch.currency,
+          narration: `Own-fleet delivery payout ${dispatch.publicReference}`,
+          reference: dispatch.publicReference,
+        },
+        `dispatch-rider-credit:${dispatch.id}`,
       );
       await this.db.vendorSettlementEntry.update({
         where: { id: entry.id },
         data: {
           status: 'COMPLETED',
-          paymentReference: result.entry_id,
+          paymentReference: `${debit.transaction_id ?? ''}:${credit.transaction_id ?? ''}`,
+          completedAt: new Date(),
+        },
+      });
+    } catch {
+      await this.db.vendorSettlementEntry.update({
+        where: { id: entry.id },
+        data: { status: 'FAILED' },
+      });
+    }
+  }
+
+  /**
+   * Open / general pool: vendor prepaid `fundingRequiredMinor` at create.
+   * On complete, auto-credit that fare to the assigned rider's main wallet.
+   */
+  private async settleOpenDispatch(dispatch: {
+    id: string;
+    tenantId: string;
+    publicReference: string;
+    currency: string;
+    fundingRequiredMinor: number;
+    providerReference: string | null;
+  }) {
+    const payout = Math.max(0, dispatch.fundingRequiredMinor);
+    const entry = await this.db.vendorSettlementEntry.upsert({
+      where: {
+        tenantId_source_sourceReference: {
+          tenantId: dispatch.tenantId,
+          source: 'RIDER_FULFILLED',
+          sourceReference: dispatch.publicReference,
+        },
+      },
+      update: {},
+      create: {
+        tenantId: dispatch.tenantId,
+        source: 'RIDER_FULFILLED',
+        sourceReference: dispatch.publicReference,
+        counterpartyId: null,
+        counterpartyName: 'Open dispatch rider',
+        totalAmountMinor: payout,
+        earningsMinor: 0,
+        currency: dispatch.currency,
+      },
+    });
+    if (entry.status === 'COMPLETED') return;
+    if (payout === 0) {
+      await this.db.vendorSettlementEntry.update({
+        where: { id: entry.id },
+        data: { status: 'COMPLETED', completedAt: new Date() },
+      });
+      return;
+    }
+    if (!dispatch.providerReference) {
+      await this.db.vendorSettlementEntry.update({
+        where: { id: entry.id },
+        data: { status: 'FAILED' },
+      });
+      return;
+    }
+    const riderExternalId = await this.provider.resolveAssignedRider(
+      dispatch.providerReference,
+    );
+    if (!riderExternalId) {
+      await this.db.vendorSettlementEntry.update({
+        where: { id: entry.id },
+        data: { status: 'FAILED' },
+      });
+      return;
+    }
+    try {
+      const credit = await this.payment.commerceCredit(
+        {
+          external_user_id: riderExternalId,
+          amount: (payout / 100).toFixed(2),
+          currency: dispatch.currency,
+          narration: `Open dispatch delivery payout ${dispatch.publicReference}`,
+          reference: dispatch.publicReference,
+        },
+        `dispatch-open-rider-credit:${dispatch.id}`,
+      );
+      await this.db.vendorSettlementEntry.update({
+        where: { id: entry.id },
+        data: {
+          status: 'COMPLETED',
+          paymentReference: String(credit.transaction_id ?? ''),
+          counterpartyId: riderExternalId,
           completedAt: new Date(),
         },
       });

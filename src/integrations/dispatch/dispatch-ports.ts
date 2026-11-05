@@ -66,6 +66,10 @@ export abstract class DispatchProviderPort {
     }>;
   }): Promise<{ providerReference: string }>;
   abstract cancel(providerReference: string): Promise<void>;
+  /** Rider-backend User.id currently assigned to the shipment (open pool or pinned own-fleet). */
+  abstract resolveAssignedRider(
+    providerReference: string,
+  ): Promise<string | null>;
 }
 
 export abstract class DispatchFinancePort {
@@ -151,6 +155,9 @@ export class LocalDispatchProviderAdapter extends DispatchProviderPort {
     return { providerReference: `local:${input.dispatchReference}` };
   }
   async cancel() {}
+  async resolveAssignedRider() {
+    return null;
+  }
 }
 
 @Injectable()
