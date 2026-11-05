@@ -25,7 +25,6 @@ export class PepsaOrderDispatchAdapter extends DispatchProviderPort {
   }
 
   async submit(input: SubmitInput) {
-    if (input.mode === 'OWN_FLEET') return this.local.submit(input);
     const base = this.required('PEPSA_ORDER_URL');
     if (
       !input.paymentReference ||
@@ -34,12 +33,33 @@ export class PepsaOrderDispatchAdapter extends DispatchProviderPort {
       !input.pickup ||
       !input.orders?.length
     )
-      throw new ConflictException('General Pool submission is incomplete');
-    if (input.orders.length > 1) return this.submitBatch(base, input);
-    const order = input.orders[0];
+      throw new ConflictException(
+        input.mode === 'OWN_FLEET'
+          ? 'Own-fleet submission is incomplete'
+          : 'General Pool submission is incomplete',
+      );
+    if (input.mode === 'OWN_FLEET') {
+      if (!input.riderExternalId)
+        throw new ConflictException(
+          'Own-fleet dispatcher must be linked to an active RiderApp account',
+        );
+      if (input.orders.length > 1)
+        throw new ConflictException(
+          'Own-fleet pepsa-order intake currently supports a single order; batch runway is not enabled yet',
+        );
+    }
+    if (input.mode === 'GENERAL_POOL' && input.orders.length > 1)
+      return this.submitBatch(base, input);
+    return this.submitSingle(base, input);
+  }
+
+  private async submitSingle(base: string, input: SubmitInput) {
+    const order = input.orders![0];
+    const ownFleet = input.mode === 'OWN_FLEET';
+    const keyPrefix = ownFleet ? 'own-fleet' : 'general-pool';
     const intake = {
       externalReference: input.dispatchReference,
-      sender: this.location(input.pickup, order.sender),
+      sender: this.location(input.pickup!, order.sender),
       recipient: this.location(order.delivery, order.receiver),
       category: this.code(order.orderType),
       itemDescription: order.itemDescription,
@@ -64,6 +84,9 @@ export class PepsaOrderDispatchAdapter extends DispatchProviderPort {
             },
           }
         : {}),
+      ...(ownFleet && input.riderExternalId
+        ? { assignedRiderExternalId: input.riderExternalId }
+        : {}),
       quote: {
         reference: `vendor:${input.dispatchReference}`,
         amountMinor: String(input.amountMinor),
@@ -77,7 +100,7 @@ export class PepsaOrderDispatchAdapter extends DispatchProviderPort {
     try {
       created = await this.request(`${base}/api/v1/orders`, {
         method: 'POST',
-        headers: this.headers(`general-pool:${input.dispatchReference}`),
+        headers: this.headers(`${keyPrefix}:${input.dispatchReference}`),
         body: JSON.stringify(intake),
       });
     } catch (error) {
@@ -87,7 +110,7 @@ export class PepsaOrderDispatchAdapter extends DispatchProviderPort {
           {
             method: 'GET',
             headers: this.headers(
-              `general-pool-inquiry:${input.dispatchReference}`,
+              `${keyPrefix}-inquiry:${input.dispatchReference}`,
             ),
           },
         );
@@ -98,11 +121,27 @@ export class PepsaOrderDispatchAdapter extends DispatchProviderPort {
     const shipmentId = String(created.id ?? '');
     if (!shipmentId)
       throw new ServiceUnavailableException('Pepsa Order response is invalid');
-    await this.request(`${base}/api/v1/orders/${shipmentId}/payments/prepaid`, {
-      method: 'POST',
-      headers: this.headers(`general-pool-prepaid:${input.dispatchReference}`),
-      body: JSON.stringify({ authorityReference: input.paymentReference }),
-    });
+    try {
+      await this.request(
+        `${base}/api/v1/orders/${shipmentId}/payments/prepaid`,
+        {
+          method: 'POST',
+          headers: this.headers(
+            `${keyPrefix}-prepaid:${input.dispatchReference}`,
+          ),
+          body: JSON.stringify({ authorityReference: input.paymentReference }),
+        },
+      );
+    } catch (error) {
+      if (ownFleet) {
+        throw new ConflictException(
+          error instanceof Error
+            ? error.message
+            : 'Assigned rider could not be pinned in Pepsa Order. Ensure the rider is online in RiderApp.',
+        );
+      }
+      throw error;
+    }
     return { providerReference: shipmentId };
   }
 
@@ -251,10 +290,17 @@ export class PepsaOrderDispatchAdapter extends DispatchProviderPort {
         string,
         unknown
       >;
-      if (!response.ok)
-        throw new ServiceUnavailableException(
-          `Pepsa Order rejected the request (${response.status})`,
-        );
+      if (!response.ok) {
+        const detail =
+          typeof body.message === 'string'
+            ? body.message
+            : Array.isArray(body.message)
+              ? body.message.join('; ')
+              : `Pepsa Order rejected the request (${response.status})`;
+        if (response.status === 409 || response.status === 422)
+          throw new ConflictException(detail);
+        throw new ServiceUnavailableException(detail);
+      }
       return body;
     } catch (error) {
       if (

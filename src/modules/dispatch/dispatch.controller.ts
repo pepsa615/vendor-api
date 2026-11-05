@@ -22,6 +22,7 @@ import {
   DispatchPreviewDto,
   DispatchProviderEventDto,
   OpenDispatchMobilityDto,
+  PepsaOrderWebhookDto,
 } from './dispatch.dto.js';
 import { DispatchService } from './dispatch.service.js';
 
@@ -185,5 +186,21 @@ export class DispatchWebhookController {
     @Body() input: DispatchProviderEventDto,
   ) {
     return this.dispatch.providerEvent(timestamp, signature, input);
+  }
+}
+
+@ApiTags('Pepsa Order dispatch webhook')
+@Throttle({ default: { limit: 100, ttl: 60_000 } })
+@Controller({ path: 'webhooks/pepsa-order', version: '1' })
+export class PepsaOrderWebhookController {
+  constructor(private readonly dispatch: DispatchService) {}
+
+  @Post()
+  event(
+    @Headers('x-pepsa-timestamp') timestamp: string,
+    @Headers('x-pepsa-signature') signature: string,
+    @Body() body: PepsaOrderWebhookDto,
+  ) {
+    return this.dispatch.pepsaOrderEvent(timestamp, signature, body);
   }
 }

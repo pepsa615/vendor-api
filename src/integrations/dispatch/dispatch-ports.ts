@@ -42,6 +42,8 @@ export abstract class DispatchProviderPort {
     mode: 'OWN_FLEET' | 'GENERAL_POOL';
     mobilityMethod?: string;
     dispatcherId?: string;
+    /** Rider-backend User.id / FleetRider.externalId — required for OWN_FLEET. */
+    riderExternalId?: string;
     stops: OptimizedStop[];
     paymentReference?: string;
     amountMinor?: number;

@@ -25,6 +25,7 @@ import type {
   DispatchListQueryDto,
   DispatchPreviewDto,
   DispatchProviderEventDto,
+  PepsaOrderWebhookDto,
 } from './dispatch.dto.js';
 import { NotificationsService } from '../notifications/notifications.service.js';
 import { FeesService } from '../fees/fees.service.js';
@@ -37,12 +38,46 @@ const transitions: Record<string, readonly string[]> = {
   PICKED_UP: ['DELIVERED'],
   DELIVERED: ['COMPLETED'],
 };
+/** pepsa-order partner webhook `type` → vendor Dispatch status. */
+export const PEPSA_ORDER_DISPATCH_STATUS: Record<string, string> = {
+  'dispatch.assigned': 'PAIRED',
+  'pickup.confirmed': 'PICKED_UP',
+  'delivery.confirmed': 'DELIVERED',
+  'delivery.completed': 'COMPLETED',
+  'cancellation.confirmed': 'CANCELLED',
+};
 export const canTransitionDispatch = (from: string, to: string) =>
   transitions[from]?.includes(to) ?? false;
 export const suggestedPayout = (amountMinor: number, revenueShareBps: number) =>
   Math.round((amountMinor * revenueShareBps) / 10_000);
+export const mapPepsaOrderEventToProvider = (
+  body: PepsaOrderWebhookDto,
+): DispatchProviderEventDto | null => {
+  const type = PEPSA_ORDER_DISPATCH_STATUS[body.type];
+  if (!type) return null;
+  const providerReference =
+    body.data?.shipmentId?.trim() || body.aggregateId?.trim();
+  if (!providerReference) return null;
+  return {
+    eventId: body.id,
+    providerReference,
+    type,
+    occurredAt: body.occurredAt,
+    message: body.type,
+  };
+};
 const hash = (value: string) =>
   createHash('sha256').update(value).digest('hex');
+const stableJson = (value: unknown): string => {
+  if (Array.isArray(value)) return `[${value.map(stableJson).join(',')}]`;
+  if (value && typeof value === 'object')
+    return `{${Object.entries(value as Record<string, unknown>)
+      .filter(([, entry]) => entry !== undefined)
+      .sort(([a], [b]) => a.localeCompare(b))
+      .map(([key, entry]) => `${JSON.stringify(key)}:${stableJson(entry)}`)
+      .join(',')}}`;
+  return JSON.stringify(value);
+};
 
 @Injectable()
 export class DispatchService {
@@ -91,6 +126,14 @@ export class DispatchService {
       : null;
     if (input.dispatcherId && !dispatcher)
       throw new ConflictException('Dispatcher is not approved and available');
+    if (
+      input.mode === 'OWN_FLEET' &&
+      dispatcher &&
+      !dispatcher.riderUserId
+    )
+      throw new ConflictException(
+        'Dispatcher is not linked to a RiderApp account yet',
+      );
 
     const batch = input.batchId
       ? await this.db.batch.findFirst({
@@ -288,11 +331,28 @@ export class DispatchService {
           ? 'RUNWAY_DISPATCH'
           : 'GENERAL_POOL_DISPATCH',
     });
+    let riderExternalId: string | undefined;
+    if (payload.mode === 'OWN_FLEET' && payload.dispatcherId) {
+      const linked = await this.db.dispatcher.findFirst({
+        where: {
+          id: payload.dispatcherId,
+          tenantId,
+          status: 'APPROVED',
+        },
+        select: { riderUserId: true },
+      });
+      if (!linked?.riderUserId)
+        throw new ConflictException(
+          'Dispatcher is not linked to a RiderApp account yet',
+        );
+      riderExternalId = linked.riderUserId;
+    }
     const submitted = await this.provider.submit({
       dispatchReference: publicReference,
       mode: payload.mode,
       mobilityMethod: payload.mobilityMethod,
       dispatcherId: payload.dispatcherId,
+      riderExternalId,
       stops: payload.stops,
       paymentReference: funding.paymentReference,
       amountMinor: payload.fundingRequiredMinor,
@@ -758,6 +818,38 @@ export class DispatchService {
     input: DispatchProviderEventDto,
   ) {
     this.verifySignature(timestamp, signature, input);
+    return this.applyProviderEvent(input);
+  }
+
+  /**
+   * pepsa-order partner webhook → vendor Dispatch status.
+   * Matches `providerReference` = shipment id (same as GENERAL_POOL / OWN_FLEET submit).
+   */
+  async pepsaOrderEvent(
+    timestamp: string,
+    signature: string,
+    body: PepsaOrderWebhookDto,
+  ) {
+    this.verifyPepsaOrderSignature(timestamp, signature, body);
+    const mapped = mapPepsaOrderEventToProvider(body);
+    if (!mapped) return { accepted: true, ignored: true };
+    if (mapped.type === 'COMPLETED') {
+      const current = await this.db.dispatch.findUnique({
+        where: { providerReference: mapped.providerReference },
+        select: { status: true },
+      });
+      if (current?.status === 'PICKED_UP') {
+        await this.applyProviderEvent({
+          ...mapped,
+          eventId: `${mapped.eventId}:delivered`,
+          type: 'DELIVERED',
+        });
+      }
+    }
+    return this.applyProviderEvent(mapped);
+  }
+
+  private async applyProviderEvent(input: DispatchProviderEventDto) {
     const payloadHash = hash(JSON.stringify(input));
     const prior = await this.db.dispatchProviderEvent.findUnique({
       where: { eventId: input.eventId },
@@ -1033,6 +1125,35 @@ export class DispatchService {
       !timingSafeEqual(Buffer.from(expected), Buffer.from(supplied))
     )
       throw new UnauthorizedException('Invalid dispatch event signature');
+  }
+
+  private verifyPepsaOrderSignature(
+    timestamp: string,
+    signature: string,
+    body: unknown,
+  ) {
+    const parsed = Number(timestamp);
+    if (
+      !Number.isFinite(parsed) ||
+      Math.abs(Date.now() - parsed * 1000) > 300_000
+    )
+      throw new UnauthorizedException('Invalid pepsa-order event timestamp');
+    const secret = this.config.get<string>('PEPSA_ORDER_WEBHOOK_SECRET');
+    if (!secret)
+      throw new ForbiddenException('Pepsa Order webhook is not configured');
+    const expected = createHmac('sha256', secret)
+      .update(`${timestamp}.`)
+      .update(stableJson(body))
+      .digest('hex');
+    const expectedBuffer = Buffer.from(expected, 'hex');
+    const actualBuffer = /^[a-f0-9]{64}$/i.test(signature)
+      ? Buffer.from(signature, 'hex')
+      : Buffer.alloc(0);
+    if (
+      actualBuffer.length !== expectedBuffer.length ||
+      !timingSafeEqual(actualBuffer, expectedBuffer)
+    )
+      throw new UnauthorizedException('Invalid pepsa-order event signature');
   }
 
   private generalPoolDistanceMetres(

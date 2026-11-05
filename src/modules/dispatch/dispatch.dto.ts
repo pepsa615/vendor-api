@@ -108,3 +108,23 @@ export class DispatchProviderEventDto {
   location?: ProviderLocationDto;
   @IsOptional() @IsString() @MaxLength(500) message?: string;
 }
+
+export class PepsaOrderWebhookDataDto {
+  @IsOptional() @IsString() shipmentId?: string;
+  @IsOptional() @IsString() externalReference?: string;
+  @IsOptional() @IsString() status?: string;
+}
+
+/** Partner webhook body from pepsa-order (`kind: PARTNER`). */
+export class PepsaOrderWebhookDto {
+  @IsString() id: string;
+  @IsString() type: string;
+  @IsInt() version: number;
+  @IsString() aggregateId: string;
+  @IsDateString() occurredAt: string;
+  @IsOptional() @IsString() correlationId?: string;
+  @IsOptional()
+  @ValidateNested()
+  @Type(() => PepsaOrderWebhookDataDto)
+  data?: PepsaOrderWebhookDataDto;
+}

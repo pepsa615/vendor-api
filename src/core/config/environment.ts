@@ -49,6 +49,8 @@ const schema = z.object({
   PEPSA_ORDER_TIMEOUT_MS: z.coerce.number().int().positive().default(5000),
   VENDOR_ORDER_SIGNING_KEY_ID: z.string().min(1).optional(),
   ORDER_VENDOR_SIGNING_KEY_ID: z.string().min(1).optional(),
+  /** One-time secret from pepsa-order webhook subscription registration. */
+  PEPSA_ORDER_WEBHOOK_SECRET: z.string().min(32).optional(),
   DISPATCH_WEBHOOK_SECRET: z.string().min(32).optional(),
   DISPATCH_WEBHOOK_KEY_ID: z.string().min(1).optional(),
   RIDER_FLEET_BASE_URL: z.url().optional(),
@@ -93,6 +95,7 @@ export function loadEnvironment(input: NodeJS.ProcessEnv): Environment {
       !parsed.data.PEPSA_ORDER_SECURITY_TOKEN ||
       !parsed.data.VENDOR_ORDER_SIGNING_KEY_ID ||
       !parsed.data.ORDER_VENDOR_SIGNING_KEY_ID ||
+      !parsed.data.PEPSA_ORDER_WEBHOOK_SECRET ||
       !parsed.data.ADMIN_CONTROL_PLANE_PUBLIC_KEY_PEM ||
       !parsed.data.ADMIN_VENDOR_SIGNING_KEY_ID ||
       !parsed.data.DISPATCH_WEBHOOK_SECRET ||

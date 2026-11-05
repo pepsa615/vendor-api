@@ -3,6 +3,7 @@ import { DispatchIntegrationsModule } from '../../integrations/dispatch/dispatch
 import {
   DispatchController,
   DispatchWebhookController,
+  PepsaOrderWebhookController,
 } from './dispatch.controller.js';
 import { DispatchService } from './dispatch.service.js';
 import { NotificationsModule } from '../notifications/notifications.module.js';
@@ -16,7 +17,11 @@ import { PricingModule } from '../pricing/pricing.module.js';
     FeesModule,
     PricingModule,
   ],
-  controllers: [DispatchController, DispatchWebhookController],
+  controllers: [
+    DispatchController,
+    DispatchWebhookController,
+    PepsaOrderWebhookController,
+  ],
   providers: [DispatchService],
 })
 export class DispatchModule {}
