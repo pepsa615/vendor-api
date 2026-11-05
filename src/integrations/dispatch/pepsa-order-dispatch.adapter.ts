@@ -11,6 +11,16 @@ import {
 
 type SubmitInput = Parameters<DispatchProviderPort['submit']>[0];
 
+/** Vendor orderType → pepsa-order ItemCategory.code */
+const CATEGORY_CODES: Record<string, string> = {
+  food_essentials: 'FOOD_ESSENTIALS',
+  pharmaceutical: 'PHARMACEUTICAL_ITEMS',
+  mail_parcel: 'MAIL_SMALL_PARCEL',
+  laundry_clothing: 'LAUNDRY_CLOTHES',
+  electronics_gadgets: 'ELECTRONICS_GADGETS',
+  large_item: 'LARGE_ITEMS_OTHER',
+};
+
 @Injectable()
 export class PepsaOrderDispatchAdapter extends DispatchProviderPort {
   constructor(
@@ -57,26 +67,28 @@ export class PepsaOrderDispatchAdapter extends DispatchProviderPort {
     const order = input.orders![0];
     const ownFleet = input.mode === 'OWN_FLEET';
     const keyPrefix = ownFleet ? 'own-fleet' : 'general-pool';
+    const timing = this.timing(order.deliveryStatus);
     const intake = {
       externalReference: input.dispatchReference,
       sender: this.location(input.pickup!, order.sender),
       recipient: this.location(order.delivery, order.receiver),
-      category: this.code(order.orderType),
+      category: this.category(order.orderType),
       itemDescription: order.itemDescription,
       ...(order.sizeEstimate ? { itemSize: order.sizeEstimate } : {}),
-      ...(order.declaredValue != null
+      ...(order.declaredValue != null &&
+      Number.isFinite(Number(order.declaredValue))
         ? {
             declaredValue: {
-              amountMinor: String(Math.round(order.declaredValue * 100)),
+              amountMinor: String(Math.round(Number(order.declaredValue) * 100)),
               currency: input.currency,
             },
           }
         : {}),
       fragile: order.fragile,
       deliveryScope: 'LAST_MILE',
-      preferredMobility: this.code(input.mobilityMethod ?? 'motorcycle'),
-      timing: order.deliveryStatus,
-      ...(order.deliveryStatus === 'SCHEDULED'
+      preferredMobility: this.code(input.mobilityMethod || 'motorcycle'),
+      timing,
+      ...(timing === 'SCHEDULED'
         ? {
             scheduledWindow: {
               start: order.scheduledStart,
@@ -89,10 +101,10 @@ export class PepsaOrderDispatchAdapter extends DispatchProviderPort {
         : {}),
       quote: {
         reference: `vendor:${input.dispatchReference}`,
-        amountMinor: String(input.amountMinor),
+        amountMinor: String(Math.max(1, Number(input.amountMinor) || 0)),
         currency: input.currency,
         expiresAt:
-          input.quoteExpiresAt ??
+          input.quoteExpiresAt ||
           new Date(Date.now() + 10 * 60_000).toISOString(),
       },
     };
@@ -148,33 +160,39 @@ export class PepsaOrderDispatchAdapter extends DispatchProviderPort {
   private async submitBatch(base: string, input: SubmitInput) {
     if (this.config.get<string>('PEPSA_ORDER_BATCH_INTAKE_ENABLED') !== 'true')
       throw new ConflictException('Pepsa Order batch intake is unavailable');
-    const shipments = input.orders!.map((order) => ({
-      sender: this.location(input.pickup!, order.sender),
-      recipient: this.location(order.delivery, order.receiver),
-      category: this.code(order.orderType),
-      itemDescription: order.itemDescription,
-      ...(order.sizeEstimate ? { itemSize: order.sizeEstimate } : {}),
-      ...(order.declaredValue != null
-        ? {
-            declaredValue: {
-              amountMinor: String(Math.round(order.declaredValue * 100)),
-              currency: input.currency,
-            },
-          }
-        : {}),
-      fragile: order.fragile,
-      deliveryScope: 'LAST_MILE',
-      preferredMobility: this.code(input.mobilityMethod ?? 'motorcycle'),
-      timing: order.deliveryStatus,
-      ...(order.deliveryStatus === 'SCHEDULED'
-        ? {
-            scheduledWindow: {
-              start: order.scheduledStart,
-              end: order.scheduledEnd,
-            },
-          }
-        : {}),
-    }));
+    const shipments = input.orders!.map((order) => {
+      const timing = this.timing(order.deliveryStatus);
+      return {
+        sender: this.location(input.pickup!, order.sender),
+        recipient: this.location(order.delivery, order.receiver),
+        category: this.category(order.orderType),
+        itemDescription: order.itemDescription,
+        ...(order.sizeEstimate ? { itemSize: order.sizeEstimate } : {}),
+        ...(order.declaredValue != null &&
+        Number.isFinite(Number(order.declaredValue))
+          ? {
+              declaredValue: {
+                amountMinor: String(
+                  Math.round(Number(order.declaredValue) * 100),
+                ),
+                currency: input.currency,
+              },
+            }
+          : {}),
+        fragile: order.fragile,
+        deliveryScope: 'LAST_MILE',
+        preferredMobility: this.code(input.mobilityMethod || 'motorcycle'),
+        timing,
+        ...(timing === 'SCHEDULED'
+          ? {
+              scheduledWindow: {
+                start: order.scheduledStart,
+                end: order.scheduledEnd,
+              },
+            }
+          : {}),
+      };
+    });
     const body = {
       externalReference: input.dispatchReference,
       authorityReference: input.paymentReference,
@@ -244,6 +262,16 @@ export class PepsaOrderDispatchAdapter extends DispatchProviderPort {
       .replace(/[^A-Z0-9]+/g, '_');
   }
 
+  private category(orderType: string) {
+    const key = orderType.trim().toLowerCase();
+    return CATEGORY_CODES[key] ?? this.code(orderType);
+  }
+
+  /** Pepsa Order only accepts INSTANT|SCHEDULED — never fulfilment statuses. */
+  private timing(deliveryStatus: string | null | undefined) {
+    return deliveryStatus === 'SCHEDULED' ? 'SCHEDULED' : 'INSTANT';
+  }
+
   private location(
     address: Record<string, unknown>,
     contact: Record<string, unknown>,
@@ -252,27 +280,34 @@ export class PepsaOrderDispatchAdapter extends DispatchProviderPort {
     const longitude = Number(address.longitude);
     if (!Number.isFinite(latitude) || !Number.isFinite(longitude))
       throw new ConflictException('A geocoded address is required');
+    const fullAddress = String(
+      address.normalizedAddress ??
+        address.formattedAddress ??
+        address.address ??
+        '',
+    ).trim();
+    const city = String(
+      address.city ?? address.normalizedCity ?? '',
+    ).trim();
+    const state = String(
+      address.state ?? address.normalizedState ?? '',
+    ).trim();
+    if (!fullAddress || !city || !state)
+      throw new ConflictException(
+        'Pickup/delivery must include address, city, and state before dispatch',
+      );
     return {
       name: String(contact.name ?? 'Customer'),
       phone: String(contact.phone ?? ''),
       ...(contact.email ? { email: String(contact.email) } : {}),
       locationName: String(
-        address.landmark ??
-          address.normalizedAddress ??
-          address.formattedAddress ??
-          address.address ??
-          'Address',
+        address.landmark ?? fullAddress,
       ),
-      address: String(
-        address.normalizedAddress ??
-          address.formattedAddress ??
-          address.address ??
-          '',
-      ),
+      address: fullAddress,
       latitude,
       longitude,
-      city: String(address.city ?? ''),
-      state: String(address.state ?? ''),
+      city,
+      state,
     };
   }
 

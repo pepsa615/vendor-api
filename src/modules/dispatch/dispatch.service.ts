@@ -1407,14 +1407,20 @@ export class DispatchService {
   }
   private routeAddress(address: any) {
     return {
-      address: [address.address, address.city, address.state]
-        .filter(Boolean)
-        .join(', '),
-      ...(Number.isFinite(address.latitude)
-        ? { latitude: address.latitude }
+      address: String(
+        address.normalizedAddress ??
+          address.formattedAddress ??
+          address.address ??
+          '',
+      ),
+      city: String(address.city ?? address.normalizedCity ?? ''),
+      state: String(address.state ?? address.normalizedState ?? ''),
+      ...(address.landmark ? { landmark: String(address.landmark) } : {}),
+      ...(Number.isFinite(Number(address.latitude))
+        ? { latitude: Number(address.latitude) }
         : {}),
-      ...(Number.isFinite(address.longitude)
-        ? { longitude: address.longitude }
+      ...(Number.isFinite(Number(address.longitude))
+        ? { longitude: Number(address.longitude) }
         : {}),
     };
   }
