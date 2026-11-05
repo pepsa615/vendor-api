@@ -1120,8 +1120,8 @@ export class DispatchService {
           amount,
           currency: dispatch.currency,
           narration: `Own-fleet rider payout ${dispatch.publicReference}`,
-          reference: dispatch.publicReference,
-          charge_code: 'OWN_FLEET_RIDER_PAYOUT',
+          // Must differ from create-time funding provider_ref (unique on payment).
+          reference: `rider-debit:${dispatch.publicReference}`,
         },
         `dispatch-rider-debit:${dispatch.id}`,
       );
@@ -1131,7 +1131,7 @@ export class DispatchService {
           amount,
           currency: dispatch.currency,
           narration: `Own-fleet delivery payout ${dispatch.publicReference}`,
-          reference: dispatch.publicReference,
+          reference: `payout:${dispatch.publicReference}`,
         },
         `dispatch-rider-credit:${dispatch.id}`,
       );
@@ -1216,7 +1216,7 @@ export class DispatchService {
           amount: (payout / 100).toFixed(2),
           currency: dispatch.currency,
           narration: `Open dispatch delivery payout ${dispatch.publicReference}`,
-          reference: dispatch.publicReference,
+          reference: `payout:${dispatch.publicReference}`,
         },
         `dispatch-open-rider-credit:${dispatch.id}`,
       );
