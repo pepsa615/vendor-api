@@ -52,6 +52,10 @@ export class FeesService {
       );
     if (input.calculationType === 'TIERED' && !input.tiers?.length)
       throw new BadRequestException('Tiered policies require tiers');
+    if (input.feeCode === 'GENERAL_POOL_MARKUP' && input.deferralAllowed)
+      throw new BadRequestException(
+        'GENERAL_POOL_MARKUP cannot allow deferral — Open Dispatch is prepaid',
+      );
     if (
       input.minimumAmountMinor != null &&
       input.maximumAmountMinor != null &&
@@ -87,9 +91,14 @@ export class FeesService {
   async activate(actorId: string, id: string, input: ActivateFeePolicyDto) {
     const policy = await this.db.feePolicyVersion.findUnique({ where: { id } });
     if (!policy) throw new NotFoundException('Fee policy not found');
-    if (policy.feeCode !== 'RUNWAY_DISPATCH')
+    const ENABLED_FEE_CODES = new Set(['RUNWAY_DISPATCH', 'GENERAL_POOL_MARKUP']);
+    if (!ENABLED_FEE_CODES.has(policy.feeCode))
       throw new ConflictException(
         'This fee code is defined but not enabled for activation',
+      );
+    if (policy.feeCode === 'GENERAL_POOL_MARKUP' && policy.deferralAllowed)
+      throw new ConflictException(
+        'GENERAL_POOL_MARKUP cannot allow deferral — Open Dispatch is prepaid',
       );
     if (policy.createdById === actorId)
       throw new ConflictException('Fee policy requires a different approver');
@@ -213,6 +222,29 @@ export class FeesService {
         contentHash: policy.contentHash,
       },
     };
+  }
+
+  /**
+   * Soft resolve for optional fees (Open Dispatch markup). Returns null when
+   * no ACTIVE/SCHEDULED policy exists instead of failing closed.
+   */
+  async resolveOptional(
+    feeCode: FeeCode,
+    tenantId: string | undefined,
+    baseAmountMinor: number,
+    currency = 'NGN',
+    at = new Date(),
+  ) {
+    try {
+      return await this.resolve(feeCode, tenantId, baseAmountMinor, currency, at);
+    } catch (error) {
+      if (
+        error instanceof ConflictException &&
+        String(error.message).includes(`No active ${feeCode}`)
+      )
+        return null;
+      throw error;
+    }
   }
 
   simulate(input: SimulateFeeDto) {

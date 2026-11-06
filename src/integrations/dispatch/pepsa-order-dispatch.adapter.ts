@@ -101,9 +101,7 @@ export class PepsaOrderDispatchAdapter extends DispatchProviderPort {
       ...(ownFleet && input.riderExternalId
         ? { assignedRiderExternalId: input.riderExternalId }
         : {}),
-      ...(ownFleet &&
-      input.riderPayoutMinor != null &&
-      Number(input.riderPayoutMinor) > 0
+      ...(input.riderPayoutMinor != null && Number(input.riderPayoutMinor) > 0
         ? {
             riderPayoutMinor: String(
               Math.round(Number(input.riderPayoutMinor)),

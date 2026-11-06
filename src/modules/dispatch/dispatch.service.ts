@@ -204,19 +204,30 @@ export class DispatchService {
     const suggestedPayoutMinor = revenueShareBps
       ? suggestedPayout(totalAmountMinor, revenueShareBps)
       : null;
+    const quoteCurrency =
+      providerQuote?.currency ?? orders[0]!.currency;
     const resolvedFee =
       input.mode === 'OWN_FLEET'
         ? await this.fees.resolve(
             'RUNWAY_DISPATCH',
             tenantId,
             totalAmountMinor,
-            providerQuote?.currency ?? orders[0]!.currency,
+            quoteCurrency,
           )
-        : null;
+        : input.mode === 'GENERAL_POOL'
+          ? await this.fees.resolveOptional(
+              'GENERAL_POOL_MARKUP',
+              tenantId,
+              providerQuote!.amountMinor,
+              quoteCurrency,
+            )
+          : null;
     const feeAmountMinor = resolvedFee?.amountMinor ?? 0;
+    // OWN_FLEET: vendor pays Pepsa match fee only.
+    // GENERAL_POOL: vendor prepays distance quote + optional Pepsa % markup.
     const fundingRequiredMinor =
       input.mode === 'GENERAL_POOL'
-        ? providerQuote!.amountMinor
+        ? providerQuote!.amountMinor + feeAmountMinor
         : feeAmountMinor;
     const payload = {
       ...input,
@@ -357,6 +368,10 @@ export class DispatchService {
         );
       riderExternalId = linked.riderUserId;
     }
+    const providerQuoteMinor =
+      payload.mode === 'GENERAL_POOL'
+        ? Math.max(0, payload.fundingRequiredMinor - payload.feeAmountMinor)
+        : payload.fundingRequiredMinor;
     const submitted = await this.provider.submit({
       dispatchReference: publicReference,
       mode: payload.mode,
@@ -365,12 +380,15 @@ export class DispatchService {
       riderExternalId,
       stops: payload.stops,
       paymentReference: funding.paymentReference,
-      amountMinor: payload.fundingRequiredMinor,
+      // OWN_FLEET: platform fee. GENERAL_POOL: distance quote only (markup is Pepsa cut).
+      amountMinor: providerQuoteMinor,
       ...(payload.mode === 'OWN_FLEET' &&
       payoutAmountMinor != null &&
       payoutAmountMinor > 0
         ? { riderPayoutMinor: payoutAmountMinor }
-        : {}),
+        : payload.mode === 'GENERAL_POOL' && providerQuoteMinor > 0
+          ? { riderPayoutMinor: providerQuoteMinor }
+          : {}),
       currency: payload.currency,
       quoteExpiresAt: payload.providerQuoteExpiresAt,
       pickup: payload.pickup,
@@ -450,7 +468,10 @@ export class DispatchService {
           const assessment = await tx.feeAssessment.create({
             data: {
               tenantId,
-              feeCode: 'RUNWAY_DISPATCH',
+              feeCode:
+                payload.mode === 'GENERAL_POOL'
+                  ? 'GENERAL_POOL_MARKUP'
+                  : 'RUNWAY_DISPATCH',
               sourceType: 'DISPATCH',
               sourceReference: dispatch.id,
               policyVersionId: payload.feePolicyVersionId,
@@ -605,10 +626,21 @@ export class DispatchService {
       tenantId,
       dispatch.optimizedDistanceMetres,
     );
+    const markup = await this.fees.resolveOptional(
+      'GENERAL_POOL_MARKUP',
+      tenantId,
+      quote.amountMinor,
+      quote.currency,
+    );
+    const feeAmountMinor = markup?.amountMinor ?? 0;
     return {
       dispatchId: dispatch.id,
       publicReference: dispatch.publicReference,
-      amountMinor: quote.amountMinor,
+      quoteAmountMinor: quote.amountMinor,
+      feeAmountMinor,
+      feePolicyVersionId: markup?.policy.id ?? null,
+      feePolicySnapshot: markup?.snapshot ?? null,
+      amountMinor: quote.amountMinor + feeAmountMinor,
       currency: quote.currency,
       mobilityMethod,
       distanceMetres: dispatch.optimizedDistanceMetres,
@@ -647,7 +679,8 @@ export class DispatchService {
       mobilityMethod,
       stops: (dispatch.routeSnapshot as any).stops,
       paymentReference: funding.paymentReference,
-      amountMinor: price.amountMinor,
+      // Rider fare is the distance quote; Pepsa markup stays on the vendor prepaid total.
+      amountMinor: price.quoteAmountMinor,
       currency: price.currency,
       pickup: (dispatch.routeSnapshot as any).pickup,
       orders: dispatch.items.map(({ order }) => {
@@ -677,6 +710,9 @@ export class DispatchService {
             dispatcherId: null,
             providerReference: submitted.providerReference,
             fundingRequiredMinor: price.amountMinor,
+            feeAmountMinor: price.feeAmountMinor,
+            feePolicyVersionId: price.feePolicyVersionId,
+            feePolicySnapshot: price.feePolicySnapshot,
             currency: price.currency,
             payoutAmountMinor: null,
             revenueShareBps: null,
@@ -685,6 +721,34 @@ export class DispatchService {
         });
         if (changed.count !== 1)
           throw new ConflictException('Runway manifest changed concurrently');
+        if (price.feeAmountMinor > 0 && price.feePolicySnapshot) {
+          const assessment = await tx.feeAssessment.create({
+            data: {
+              tenantId,
+              feeCode: 'GENERAL_POOL_MARKUP',
+              sourceType: 'DISPATCH',
+              sourceReference: id,
+              policyVersionId: price.feePolicyVersionId,
+              policySnapshot: price.feePolicySnapshot,
+              assessedAmountMinor: price.feeAmountMinor,
+              collectedAmountMinor: price.feeAmountMinor,
+              currency: price.currency,
+            },
+          });
+          if (funding.paymentReference) {
+            await tx.feeCollectionPortion.create({
+              data: {
+                tenantId,
+                assessmentId: assessment.id,
+                sequence: 0,
+                amountMinor: price.feeAmountMinor,
+                currency: price.currency,
+                paymentTransactionId: funding.paymentReference,
+                idempotencyKey: `fee-immediate-open:${id}`,
+              },
+            });
+          }
+        }
         await tx.dispatchEvent.create({
           data: {
             dispatchId: id,
@@ -1191,8 +1255,8 @@ export class DispatchService {
   }
 
   /**
-   * Open / general pool: vendor prepaid `fundingRequiredMinor` at create.
-   * On complete, auto-credit that fare to the assigned rider's main wallet.
+   * Open / general pool: vendor prepaid quote + Pepsa markup at create.
+   * On complete, credit the distance quote to the rider; Pepsa keeps markup.
    */
   private async settleOpenDispatch(dispatch: {
     id: string;
@@ -1200,9 +1264,11 @@ export class DispatchService {
     publicReference: string;
     currency: string;
     fundingRequiredMinor: number;
+    feeAmountMinor?: number | null;
     providerReference: string | null;
   }) {
-    const payout = Math.max(0, dispatch.fundingRequiredMinor);
+    const markup = Math.max(0, dispatch.feeAmountMinor ?? 0);
+    const payout = Math.max(0, dispatch.fundingRequiredMinor - markup);
     const entry = await this.db.vendorSettlementEntry.upsert({
       where: {
         tenantId_source_sourceReference: {
@@ -1218,8 +1284,8 @@ export class DispatchService {
         sourceReference: dispatch.publicReference,
         counterpartyId: null,
         counterpartyName: 'Open dispatch rider',
-        totalAmountMinor: payout,
-        earningsMinor: 0,
+        totalAmountMinor: dispatch.fundingRequiredMinor,
+        earningsMinor: markup,
         currency: dispatch.currency,
       },
     });
