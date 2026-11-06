@@ -111,8 +111,42 @@ describe('DispatchService.pepsaOrderEvent', () => {
     const body = { ...baseBody(), type: 'tracking.updated' };
     const { timestamp, signature } = signed(body);
     await expect(
-      service({}).pepsaOrderEvent(timestamp, signature, body),
+      service({
+        dispatch: { findFirst: vi.fn().mockResolvedValue(null) },
+      }).pepsaOrderEvent(timestamp, signature, body),
     ).resolves.toEqual({ accepted: true, ignored: true });
+  });
+
+  it('heals PENDING_MATCH to PAIRED when tracking.updated arrives after a missed assign', async () => {
+    const body = { ...baseBody(), type: 'tracking.updated' };
+    const { timestamp, signature } = signed(body);
+    const dispatch = {
+      id: 'dispatch-1',
+      tenantId: 'tenant-1',
+      publicReference: 'D-ABC',
+      status: 'PENDING_MATCH',
+      providerReference: 'shipment-ref-1',
+      version: 1,
+    };
+    const tx = vi.fn(async (fn: (client: object) => Promise<unknown>) =>
+      fn({
+        dispatchProviderEvent: { create: vi.fn(), update: vi.fn() },
+        dispatch: { updateMany: vi.fn().mockResolvedValue({ count: 1 }) },
+        dispatchEvent: { create: vi.fn() },
+        order: { updateMany: vi.fn().mockResolvedValue({ count: 1 }) },
+      }),
+    );
+    await expect(
+      service({
+        dispatchProviderEvent: { findUnique: vi.fn().mockResolvedValue(null) },
+        dispatch: {
+          findFirst: vi.fn().mockResolvedValue(dispatch),
+          findUnique: vi.fn().mockResolvedValue(dispatch),
+        },
+        $transaction: tx,
+      }).pepsaOrderEvent(timestamp, signature, body),
+    ).resolves.toEqual({ accepted: true });
+    expect(tx).toHaveBeenCalled();
   });
 
   it('rejects invalid signatures', async () => {
