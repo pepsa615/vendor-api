@@ -256,10 +256,14 @@ export class PepsaOrderDispatchAdapter extends DispatchProviderPort {
   }
 
   private code(value: string) {
-    return value
+    const normalized = value
       .trim()
       .toUpperCase()
       .replace(/[^A-Z0-9]+/g, '_');
+    // Pepsa-order mobility ladder has no BICYCLE — map to MOTORCYCLE so
+    // OWN_FLEET / Open Dispatch intake never invents an unknown code.
+    if (normalized === 'BICYCLE' || normalized === 'BIKE') return 'MOTORCYCLE';
+    return normalized;
   }
 
   private category(orderType: string) {
