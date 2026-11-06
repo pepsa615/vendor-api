@@ -517,9 +517,32 @@ export class OrdersService {
     if (existing) {
       if (existing.payloadHash !== payloadHash)
         throw new ConflictException('Webhook event conflict');
+      if (
+        existing.processedAt == null &&
+        (body.eventType === 'wallet.credited' ||
+          body.eventType === 'wallet.debited')
+      ) {
+        const vendor = await this.db.vendor.findUnique({
+          where: { externalCheckoutUserId: body.data.externalUserId },
+        });
+        if (!vendor)
+          throw new NotFoundException('Vendor payment identity not found');
+        let collection = null;
+        if (body.eventType === 'wallet.credited') {
+          collection = await this.account.reconcileFees(vendor.id);
+        }
+        await this.db.paymentWebhookEvent.update({
+          where: { eventId: body.eventId },
+          data: { processedAt: new Date() },
+        });
+        return { processed: true, duplicate: true, resumed: true, collection };
+      }
       return { processed: true, duplicate: true };
     }
-    if (body.eventType === 'wallet.credited') {
+    if (
+      body.eventType === 'wallet.credited' ||
+      body.eventType === 'wallet.debited'
+    ) {
       const vendor = await this.db.vendor.findUnique({
         where: { externalCheckoutUserId: body.data.externalUserId },
       });
@@ -530,10 +553,29 @@ export class OrdersService {
           eventId: body.eventId,
           eventType: body.eventType,
           payloadHash,
-          processedAt: new Date(),
+          processedAt: null,
         },
       });
-      const collection = await this.account.reconcileFees(vendor.id);
+      const credited = body.eventType === 'wallet.credited';
+      await this.notifications?.emit({
+        tenantId: vendor.id,
+        permission: 'account.read',
+        type: credited ? 'WALLET_CREDITED' : 'WALLET_DEBITED',
+        title: credited ? 'Wallet funded' : 'Wallet debited',
+        body: credited
+          ? `Your wallet was credited with ${body.data.currency} ${body.data.amount}.`
+          : `Your wallet was debited ${body.data.currency} ${body.data.amount}.`,
+        href: '/finance',
+        uniqueKey: `wallet:${body.eventId}`,
+      });
+      let collection = null;
+      if (credited) {
+        collection = await this.account.reconcileFees(vendor.id);
+      }
+      await this.db.paymentWebhookEvent.update({
+        where: { eventId: body.eventId },
+        data: { processedAt: new Date() },
+      });
       return { processed: true, duplicate: false, collection };
     }
     await this.db.$transaction(async (tx) => {

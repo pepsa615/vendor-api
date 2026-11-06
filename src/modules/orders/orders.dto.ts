@@ -107,6 +107,7 @@ export class PaymentWebhookDto {
     'checkout.expired',
     'checkout.failed',
     'wallet.credited',
+    'wallet.debited',
   ])
   eventType: string;
   @IsInt() schemaVersion: number;
