@@ -14,7 +14,11 @@ export function normalizeE164Phone(
     let digits = val.trim().replace(/[^\d+]/g, '');
     if (digits.startsWith('+')) digits = digits.slice(1);
     if (!digits) return null;
-    if (digits.startsWith('234') && digits.length >= 12 && digits.length <= 14) {
+    if (
+      digits.startsWith('234') &&
+      digits.length >= 12 &&
+      digits.length <= 14
+    ) {
       return `+${digits}`;
     }
     if (digits.startsWith('0') && digits.length === 11) {
@@ -165,25 +169,38 @@ export class ProvisioningService {
           ? snapshot.dateOfBirth.slice(0, 10)
           : snapshot.dateOfBirth
         : undefined;
-      const wallet = await this.payment.createWallet(
-        {
-          external_user_id: saga.tenantId,
-          user_type: 'business',
-          kyc: {
-            full_name: saga.vendor.businessName.trim().slice(0, 150),
-            phone_number: normalizeE164Phone(
-              snapshot.phone,
-              saga.vendor.phone,
-            ),
-            address: resolvedAddress,
-            ...(resolvedDob ? { date_of_birth: resolvedDob } : {}),
-            nin: decryptSensitive(snapshot.encryptedNin).replace(/\D/g, ''),
-            proof_of_nin_document_id: imported.get('proof_of_nin'),
-            proof_of_address_document_id: imported.get('proof_of_address'),
+      let wallet: {
+        user_id: string;
+        wallet_id: string;
+        settlement_wallet_id?: string | null;
+      };
+      try {
+        wallet = await this.payment.createWallet(
+          {
+            external_user_id: saga.tenantId,
+            user_type: 'business',
+            kyc: {
+              full_name: saga.vendor.businessName.trim().slice(0, 150),
+              phone_number: normalizeE164Phone(
+                snapshot.phone,
+                saga.vendor.phone,
+              ),
+              address: resolvedAddress,
+              ...(resolvedDob ? { date_of_birth: resolvedDob } : {}),
+              nin: decryptSensitive(snapshot.encryptedNin).replace(/\D/g, ''),
+              proof_of_nin_document_id: imported.get('proof_of_nin'),
+              proof_of_address_document_id: imported.get('proof_of_address'),
+            },
           },
-        },
-        `vendor-wallet:${saga.tenantId}:${saga.applicationId}`,
-      );
+          `vendor-wallet:${saga.tenantId}:${saga.applicationId}`,
+        );
+      } catch (error) {
+        // Re-approval / duplicate identity: adopt the wallet already linked to
+        // this tenant instead of leaving the vendor stuck in FAILED_RETRYABLE.
+        if (!(error instanceof HttpException) || error.getStatus() !== 409)
+          throw error;
+        wallet = await this.payment.getWalletByExternalId(saga.tenantId);
+      }
       return await this.db.$transaction(async (tx) => {
         await tx.vendor.update({
           where: { id: saga.tenantId },

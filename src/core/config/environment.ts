@@ -96,6 +96,7 @@ export function loadEnvironment(input: NodeJS.ProcessEnv): Environment {
       !parsed.data.PEPSA_ORDER_API_ID ||
       !parsed.data.PEPSA_ORDER_SUB_ID ||
       !parsed.data.PEPSA_ORDER_SECURITY_TOKEN ||
+      !parsed.data.PEPSA_ORDER_WEBHOOK_SECRET ||
       !parsed.data.VENDOR_ORDER_SIGNING_KEY_ID ||
       !parsed.data.ORDER_VENDOR_SIGNING_KEY_ID ||
       !parsed.data.ADMIN_CONTROL_PLANE_PUBLIC_KEY_PEM ||

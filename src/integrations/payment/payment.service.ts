@@ -19,8 +19,7 @@ export class PaymentService {
     init: RequestInit = {},
     opts?: { baseUrl?: string; apiKey?: string },
   ): Promise<T> {
-    const base =
-      opts?.baseUrl ?? this.config.get<string>('PEPSA_PAYMENT_URL');
+    const base = opts?.baseUrl ?? this.config.get<string>('PEPSA_PAYMENT_URL');
     const key =
       opts?.apiKey ?? this.config.get<string>('PEPSA_PAYMENT_API_KEY');
     if (!base || !key)
@@ -60,6 +59,11 @@ export class PaymentService {
 
   getWallet(userId: string) {
     return this.request<any>(`wallets/${userId}`);
+  }
+  getWalletByExternalId(externalUserId: string) {
+    return this.request<any>(
+      `wallets/external/${encodeURIComponent(externalUserId)}`,
+    );
   }
   createWallet(input: unknown, key: string) {
     return this.request<any>('wallets', {

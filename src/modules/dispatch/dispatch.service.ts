@@ -844,6 +844,10 @@ export class DispatchService {
   /**
    * pepsa-order partner webhook → vendor Dispatch status.
    * Matches `providerReference` = shipment id (same as GENERAL_POOL / OWN_FLEET submit).
+   *
+   * If `dispatch.assigned` was missed but the rider is already moving
+   * (`tracking.updated`), catch PENDING_MATCH up to PAIRED so Activities
+   * does not stay stuck after accept / en-route.
    */
   async pepsaOrderEvent(
     timestamp: string,
@@ -851,13 +855,14 @@ export class DispatchService {
     body: PepsaOrderWebhookDto,
   ) {
     this.verifyPepsaOrderSignature(timestamp, signature, body);
-    const mapped = mapPepsaOrderEventToProvider(body);
-    if (!mapped) return { accepted: true, ignored: true };
+    const providerReference =
+      body.data?.shipmentId?.trim() || body.aggregateId?.trim() || '';
+    if (!providerReference) return { accepted: true, ignored: true };
     const current = await this.db.dispatch.findFirst({
       where: {
         OR: [
-          { providerReference: mapped.providerReference },
-          { publicReference: mapped.providerReference },
+          { providerReference },
+          { publicReference: providerReference },
           ...(body.data?.externalReference
             ? [
                 { providerReference: body.data.externalReference },
@@ -873,8 +878,25 @@ export class DispatchService {
       },
       select: { status: true, providerReference: true },
     });
+    let mapped = mapPepsaOrderEventToProvider(body);
+    if (!mapped) {
+      if (body.type === 'tracking.updated' && current?.status === 'PENDING_MATCH') {
+        mapped = {
+          eventId: body.id,
+          providerReference: current.providerReference ?? providerReference,
+          type: 'PAIRED',
+          occurredAt: body.occurredAt,
+          message: 'tracking.updated:catchup-paired',
+        };
+      } else {
+        return { accepted: true, ignored: true };
+      }
+    }
     if (!current) {
       throw new NotFoundException('Dispatch provider reference not found');
+    }
+    if (current.status === mapped.type) {
+      return { accepted: true, duplicate: true };
     }
     // Prefer the stored providerReference for subsequent writes.
     const event = {
