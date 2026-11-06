@@ -14,6 +14,7 @@ import {
 } from 'node:crypto';
 import { AuditService } from '../../common/audit/audit.service.js';
 import { PrismaService } from '../../core/database/prisma.service.js';
+import { Prisma } from '../../generated/prisma/client.js';
 import { PaymentService } from '../../integrations/payment/payment.service.js';
 import {
   DispatchFinancePort,
@@ -712,7 +713,7 @@ export class DispatchService {
             fundingRequiredMinor: price.amountMinor,
             feeAmountMinor: price.feeAmountMinor,
             feePolicyVersionId: price.feePolicyVersionId,
-            feePolicySnapshot: price.feePolicySnapshot,
+            feePolicySnapshot: price.feePolicySnapshot ?? Prisma.DbNull,
             currency: price.currency,
             payoutAmountMinor: null,
             revenueShareBps: null,
