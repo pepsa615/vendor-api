@@ -99,6 +99,11 @@ export class PepsaOrderDispatchAdapter extends DispatchProviderPort {
       ...(ownFleet && input.riderExternalId
         ? { assignedRiderExternalId: input.riderExternalId }
         : {}),
+      ...(ownFleet &&
+      input.payoutAmountMinor != null &&
+      Number(input.payoutAmountMinor) > 0
+        ? { riderPayoutMinor: String(Math.round(Number(input.payoutAmountMinor))) }
+        : {}),
       quote: {
         reference: `vendor:${input.dispatchReference}`,
         amountMinor: String(Math.max(1, Number(input.amountMinor) || 0)),

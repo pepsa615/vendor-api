@@ -370,6 +370,12 @@ export class DispatchService {
       stops: payload.stops,
       paymentReference: funding.paymentReference,
       amountMinor: payload.fundingRequiredMinor,
+      payoutAmountMinor:
+        payload.mode === 'OWN_FLEET' &&
+        payoutAmountMinor != null &&
+        payoutAmountMinor > 0
+          ? payoutAmountMinor
+          : undefined,
       currency: payload.currency,
       quoteExpiresAt: payload.providerQuoteExpiresAt,
       pickup: payload.pickup,
