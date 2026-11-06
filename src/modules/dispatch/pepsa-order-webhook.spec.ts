@@ -20,6 +20,7 @@ const baseBody = (): PepsaOrderWebhookDto => ({
     shipmentId: 'shipment-ref-1',
     externalReference: 'D-ABC',
     status: 'DISPATCHED',
+    assignedRiderExternalId: '146eabab-1111-4111-8111-111111111111',
   },
 });
 

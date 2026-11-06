@@ -140,11 +140,7 @@ export class DispatchService {
       : null;
     if (input.dispatcherId && !dispatcher)
       throw new ConflictException('Dispatcher is not approved and available');
-    if (
-      input.mode === 'OWN_FLEET' &&
-      dispatcher &&
-      !dispatcher.riderUserId
-    )
+    if (input.mode === 'OWN_FLEET' && dispatcher && !dispatcher.riderUserId)
       throw new ConflictException(
         'Dispatcher is not linked to a RiderApp account yet',
       );
@@ -370,6 +366,11 @@ export class DispatchService {
       stops: payload.stops,
       paymentReference: funding.paymentReference,
       amountMinor: payload.fundingRequiredMinor,
+      ...(payload.mode === 'OWN_FLEET' &&
+      payoutAmountMinor != null &&
+      payoutAmountMinor > 0
+        ? { riderPayoutMinor: payoutAmountMinor }
+        : {}),
       currency: payload.currency,
       quoteExpiresAt: payload.providerQuoteExpiresAt,
       pickup: payload.pickup,
@@ -880,7 +881,10 @@ export class DispatchService {
     });
     let mapped = mapPepsaOrderEventToProvider(body);
     if (!mapped) {
-      if (body.type === 'tracking.updated' && current?.status === 'PENDING_MATCH') {
+      if (
+        body.type === 'tracking.updated' &&
+        current?.status === 'PENDING_MATCH'
+      ) {
         mapped = {
           eventId: body.id,
           providerReference: current.providerReference ?? providerReference,
@@ -1067,8 +1071,7 @@ export class DispatchService {
       },
     });
     if (!dispatch) return;
-    if (dispatch.mode === 'OWN_FLEET')
-      return this.settleOwnFleet(dispatch);
+    if (dispatch.mode === 'OWN_FLEET') return this.settleOwnFleet(dispatch);
     if (dispatch.mode === 'GENERAL_POOL')
       return this.settleOpenDispatch(dispatch);
   }

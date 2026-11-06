@@ -79,7 +79,9 @@ export class PepsaOrderDispatchAdapter extends DispatchProviderPort {
       Number.isFinite(Number(order.declaredValue))
         ? {
             declaredValue: {
-              amountMinor: String(Math.round(Number(order.declaredValue) * 100)),
+              amountMinor: String(
+                Math.round(Number(order.declaredValue) * 100),
+              ),
               currency: input.currency,
             },
           }
@@ -98,6 +100,15 @@ export class PepsaOrderDispatchAdapter extends DispatchProviderPort {
         : {}),
       ...(ownFleet && input.riderExternalId
         ? { assignedRiderExternalId: input.riderExternalId }
+        : {}),
+      ...(ownFleet &&
+      input.riderPayoutMinor != null &&
+      Number(input.riderPayoutMinor) > 0
+        ? {
+            riderPayoutMinor: String(
+              Math.round(Number(input.riderPayoutMinor)),
+            ),
+          }
         : {}),
       quote: {
         reference: `vendor:${input.dispatchReference}`,
@@ -241,10 +252,13 @@ export class PepsaOrderDispatchAdapter extends DispatchProviderPort {
   async resolveAssignedRider(providerReference: string) {
     const base = this.required('PEPSA_ORDER_URL');
     try {
-      const row = await this.request(`${base}/api/v1/orders/${providerReference}`, {
-        method: 'GET',
-        headers: this.headers(`assigned-rider:${providerReference}`),
-      });
+      const row = await this.request(
+        `${base}/api/v1/orders/${providerReference}`,
+        {
+          method: 'GET',
+          headers: this.headers(`assigned-rider:${providerReference}`),
+        },
+      );
       const rider =
         typeof row.assignedRiderExternalId === 'string'
           ? row.assignedRiderExternalId.trim()
@@ -290,12 +304,8 @@ export class PepsaOrderDispatchAdapter extends DispatchProviderPort {
         address.address ??
         '',
     ).trim();
-    const city = String(
-      address.city ?? address.normalizedCity ?? '',
-    ).trim();
-    const state = String(
-      address.state ?? address.normalizedState ?? '',
-    ).trim();
+    const city = String(address.city ?? address.normalizedCity ?? '').trim();
+    const state = String(address.state ?? address.normalizedState ?? '').trim();
     if (!fullAddress || !city || !state)
       throw new ConflictException(
         'Pickup/delivery must include address, city, and state before dispatch',
@@ -304,9 +314,7 @@ export class PepsaOrderDispatchAdapter extends DispatchProviderPort {
       name: String(contact.name ?? 'Customer'),
       phone: String(contact.phone ?? ''),
       ...(contact.email ? { email: String(contact.email) } : {}),
-      locationName: String(
-        address.landmark ?? fullAddress,
-      ),
+      locationName: String(address.landmark ?? fullAddress),
       address: fullAddress,
       latitude,
       longitude,

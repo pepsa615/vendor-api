@@ -113,6 +113,8 @@ export class PepsaOrderWebhookDataDto {
   @IsOptional() @IsString() shipmentId?: string;
   @IsOptional() @IsString() externalReference?: string;
   @IsOptional() @IsString() status?: string;
+  /** Present on dispatch.assigned — must be whitelisted or ValidationPipe 400s. */
+  @IsOptional() @IsString() assignedRiderExternalId?: string;
 }
 
 /** Partner webhook body from pepsa-order (`kind: PARTNER`). */

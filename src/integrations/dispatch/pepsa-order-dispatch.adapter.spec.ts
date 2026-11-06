@@ -66,6 +66,7 @@ describe('PepsaOrderDispatchAdapter OWN_FLEET', () => {
       stops: [],
       paymentReference: 'pay-1',
       amountMinor: 25000,
+      riderPayoutMinor: 51896,
       currency: 'NGN',
       pickup: { ...geo },
       orders: [order],
@@ -80,6 +81,7 @@ describe('PepsaOrderDispatchAdapter OWN_FLEET', () => {
     expect(body.assignedRiderExternalId).toBe(
       '146eabab-1111-4111-8111-111111111111',
     );
+    expect(body.riderPayoutMinor).toBe('51896');
     expect(body.quote.amountMinor).toBe('25000');
     const prepaid = calls.find((c) => String(c.url).includes('/prepaid'));
     expect(prepaid?.init?.headers).toMatchObject({

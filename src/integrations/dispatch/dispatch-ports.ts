@@ -47,6 +47,8 @@ export abstract class DispatchProviderPort {
     stops: OptimizedStop[];
     paymentReference?: string;
     amountMinor?: number;
+    /** Rider earnings (kobo). OWN_FLEET payout — distinct from amountMinor (platform fee). */
+    riderPayoutMinor?: number;
     currency?: string;
     quoteExpiresAt?: string;
     pickup?: Record<string, unknown>;
