@@ -65,6 +65,20 @@ export const catchUpStatuses = (from: string, to: string): string[] => {
 };
 export const suggestedPayout = (amountMinor: number, revenueShareBps: number) =>
   Math.round((amountMinor * revenueShareBps) / 10_000);
+
+/** Open dispatch: paid fare is the pie; Pepsa keeps fee, rider gets the rest. */
+export const openDispatchSplit = (
+  paidMinor: number,
+  pepsaFeeMinor: number,
+) => {
+  const paid = Math.max(0, paidMinor);
+  const fee = Math.min(Math.max(0, pepsaFeeMinor), paid);
+  return {
+    fundingRequiredMinor: paid,
+    feeAmountMinor: fee,
+    riderPayoutMinor: paid - fee,
+  };
+};
 export const mapPepsaOrderEventToProvider = (
   body: PepsaOrderWebhookDto,
 ): DispatchProviderEventDto | null => {
@@ -223,13 +237,17 @@ export class DispatchService {
               quoteCurrency,
             )
           : null;
-    const feeAmountMinor = resolvedFee?.amountMinor ?? 0;
+    const resolvedFeeAmountMinor = resolvedFee?.amountMinor ?? 0;
     // OWN_FLEET: vendor pays Pepsa match fee only.
-    // GENERAL_POOL: vendor prepays distance quote + optional Pepsa % markup.
-    const fundingRequiredMinor =
+    // GENERAL_POOL: vendor prepays the distance quote; Pepsa keeps x% of it,
+    // rider earns the remainder (same split model as BAS → open dispatch).
+    const openSplit =
       input.mode === 'GENERAL_POOL'
-        ? providerQuote!.amountMinor + feeAmountMinor
-        : feeAmountMinor;
+        ? openDispatchSplit(providerQuote!.amountMinor, resolvedFeeAmountMinor)
+        : null;
+    const feeAmountMinor = openSplit?.feeAmountMinor ?? resolvedFeeAmountMinor;
+    const fundingRequiredMinor =
+      openSplit?.fundingRequiredMinor ?? feeAmountMinor;
     const payload = {
       ...input,
       pickup: this.routeAddress(pickup),
@@ -369,10 +387,10 @@ export class DispatchService {
         );
       riderExternalId = linked.riderUserId;
     }
-    const providerQuoteMinor =
+    const openRiderPayoutMinor =
       payload.mode === 'GENERAL_POOL'
         ? Math.max(0, payload.fundingRequiredMinor - payload.feeAmountMinor)
-        : payload.fundingRequiredMinor;
+        : null;
     const submitted = await this.provider.submit({
       dispatchReference: publicReference,
       mode: payload.mode,
@@ -381,14 +399,14 @@ export class DispatchService {
       riderExternalId,
       stops: payload.stops,
       paymentReference: funding.paymentReference,
-      // OWN_FLEET: platform fee. GENERAL_POOL: distance quote only (markup is Pepsa cut).
-      amountMinor: providerQuoteMinor,
+      // OWN_FLEET: platform fee as quote. GENERAL_POOL: paid fare as quote.
+      amountMinor: payload.fundingRequiredMinor,
       ...(payload.mode === 'OWN_FLEET' &&
       payoutAmountMinor != null &&
       payoutAmountMinor > 0
         ? { riderPayoutMinor: payoutAmountMinor }
-        : payload.mode === 'GENERAL_POOL' && providerQuoteMinor > 0
-          ? { riderPayoutMinor: providerQuoteMinor }
+        : openRiderPayoutMinor != null && openRiderPayoutMinor >= 0
+          ? { riderPayoutMinor: openRiderPayoutMinor }
           : {}),
       currency: payload.currency,
       quoteExpiresAt: payload.providerQuoteExpiresAt,
@@ -633,15 +651,20 @@ export class DispatchService {
       quote.amountMinor,
       quote.currency,
     );
-    const feeAmountMinor = markup?.amountMinor ?? 0;
+    const split = openDispatchSplit(
+      quote.amountMinor,
+      markup?.amountMinor ?? 0,
+    );
     return {
       dispatchId: dispatch.id,
       publicReference: dispatch.publicReference,
       quoteAmountMinor: quote.amountMinor,
-      feeAmountMinor,
+      feeAmountMinor: split.feeAmountMinor,
+      riderPayoutMinor: split.riderPayoutMinor,
       feePolicyVersionId: markup?.policy.id ?? null,
       feePolicySnapshot: markup?.snapshot ?? null,
-      amountMinor: quote.amountMinor + feeAmountMinor,
+      // Prepaid amount = paid fare (quote). Pepsa cut is taken from this pie.
+      amountMinor: split.fundingRequiredMinor,
       currency: quote.currency,
       mobilityMethod,
       distanceMetres: dispatch.optimizedDistanceMetres,
@@ -680,8 +703,9 @@ export class DispatchService {
       mobilityMethod,
       stops: (dispatch.routeSnapshot as any).stops,
       paymentReference: funding.paymentReference,
-      // Rider fare is the distance quote; Pepsa markup stays on the vendor prepaid total.
+      // Paid fare as quote; rider earns quote minus Pepsa open-dispatch cut.
       amountMinor: price.quoteAmountMinor,
+      riderPayoutMinor: price.riderPayoutMinor,
       currency: price.currency,
       pickup: (dispatch.routeSnapshot as any).pickup,
       orders: dispatch.items.map(({ order }) => {
@@ -1256,8 +1280,8 @@ export class DispatchService {
   }
 
   /**
-   * Open / general pool: vendor prepaid quote + Pepsa markup at create.
-   * On complete, credit the distance quote to the rider; Pepsa keeps markup.
+   * Open / general pool: vendor prepaid the paid fare (quote).
+   * On complete, credit rider (100−x)%; Pepsa retains x% as earningsMinor.
    */
   private async settleOpenDispatch(dispatch: {
     id: string;
@@ -1268,8 +1292,8 @@ export class DispatchService {
     feeAmountMinor?: number | null;
     providerReference: string | null;
   }) {
-    const markup = Math.max(0, dispatch.feeAmountMinor ?? 0);
-    const payout = Math.max(0, dispatch.fundingRequiredMinor - markup);
+    const pepsaCut = Math.max(0, dispatch.feeAmountMinor ?? 0);
+    const payout = Math.max(0, dispatch.fundingRequiredMinor - pepsaCut);
     const entry = await this.db.vendorSettlementEntry.upsert({
       where: {
         tenantId_source_sourceReference: {
@@ -1286,7 +1310,7 @@ export class DispatchService {
         counterpartyId: null,
         counterpartyName: 'Open dispatch rider',
         totalAmountMinor: dispatch.fundingRequiredMinor,
-        earningsMinor: markup,
+        earningsMinor: pepsaCut,
         currency: dispatch.currency,
       },
     });
