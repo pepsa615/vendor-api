@@ -86,6 +86,36 @@ describe('Payment event failure safety', () => {
     ).rejects.toBeInstanceOf(UnauthorizedException);
   });
 
+  it('verifies the exact raw request bytes independently of DTO field order', async () => {
+    const rawBody = JSON.stringify(body);
+    const timestamp = String(Date.now());
+    const signature = createHmac('sha256', secret)
+      .update(`${timestamp}.${rawBody}`)
+      .digest('hex');
+    const reordered = {
+      data: body.data,
+      aggregateId: body.aggregateId,
+      aggregateType: body.aggregateType,
+      platformId: body.platformId,
+      occurredAt: body.occurredAt,
+      schemaVersion: body.schemaVersion,
+      eventType: body.eventType,
+      eventId: body.eventId,
+    };
+
+    await expect(
+      service({
+        paymentWebhookEvent: {
+          findUnique: vi.fn().mockResolvedValue({
+            payloadHash: createHash('sha256')
+              .update(JSON.stringify(reordered))
+              .digest('hex'),
+          }),
+        },
+      }).paymentWebhook(timestamp, signature, 'key-1', reordered, rawBody),
+    ).resolves.toEqual({ processed: true, duplicate: true });
+  });
+
   it('cannot move a paid order backward when an expired event is reordered', async () => {
     const expired: PaymentWebhookDto = {
       ...body,

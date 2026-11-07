@@ -2,7 +2,7 @@ import { RequestMethod, ValidationPipe, VersioningType } from '@nestjs/common';
 import { NestFactory } from '@nestjs/core';
 import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger';
 import helmet from 'helmet';
-import { json, urlencoded } from 'express';
+import { json, urlencoded, type Request } from 'express';
 import cookieParser from 'cookie-parser';
 import { AppModule } from './app.module.js';
 import { loadEnvironment } from './core/config/environment.js';
@@ -22,7 +22,15 @@ async function bootstrap() {
 
   app.use(helmet());
   app.use(cookieParser());
-  app.use(json({ limit: '1mb' }));
+  app.use(
+    json({
+      limit: '1mb',
+      verify: (request, _response, buffer) => {
+        (request as Request & { rawBody?: Buffer }).rawBody =
+          Buffer.from(buffer);
+      },
+    }),
+  );
   app.use(urlencoded({ extended: false, limit: '1mb' }));
   app.use(new RequestContextMiddleware().use);
   app.use(new RequestLoggingMiddleware().use);
