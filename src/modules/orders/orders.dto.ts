@@ -98,6 +98,10 @@ export class PaymentWebhookDataDto {
   @IsString() amount!: string;
   @IsString() currency!: string;
   @IsOptional() @IsString() paymentReference?: string;
+  @IsOptional() @IsString() transactionId?: string;
+  @IsOptional() @IsString() reference?: string | null;
+  @IsOptional() @IsString() settlementEntryId?: string;
+  @IsOptional() @IsString() status?: string;
 }
 
 export class PaymentWebhookDto {
@@ -114,6 +118,7 @@ export class PaymentWebhookDto {
   @IsString() platformId: string;
   @IsString() aggregateType: string;
   @IsString() aggregateId: string;
+  @IsDateString() occurredAt: string;
   @ValidateNested()
   @Type(() => PaymentWebhookDataDto)
   data!: PaymentWebhookDataDto;

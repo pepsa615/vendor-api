@@ -482,11 +482,25 @@ export class OrdersService {
     return vendor;
   }
 
+  private async findVendorForPaymentEvent(externalUserId: string) {
+    // Payment events expose the platform-provided external_user_id. Wallets
+    // provisioned by Vendor use the tenant ID for that value; user_id is the
+    // separate Payment-owned identity stored as externalCheckoutUserId.
+    const byTenant = await this.db.vendor.findUnique({
+      where: { id: externalUserId },
+    });
+    if (byTenant) return byTenant;
+    return this.db.vendor.findUnique({
+      where: { externalCheckoutUserId: externalUserId },
+    });
+  }
+
   async paymentWebhook(
     timestamp: string,
     signature: string,
     keyId: string,
     body: PaymentWebhookDto,
+    rawBody?: string,
   ) {
     const secret = this.config.get<string>('PEPSA_PAYMENT_WEBHOOK_SECRET');
     if (!secret) throw new ForbiddenException('Payment webhook is unavailable');
@@ -502,7 +516,7 @@ export class OrdersService {
     if (!Number.isFinite(time) || Math.abs(Date.now() - time) > 5 * 60 * 1000)
       throw new UnauthorizedException('Payment webhook timestamp is invalid');
     const expected = createHmac('sha256', secret)
-      .update(`${timestamp}.${JSON.stringify(body)}`)
+      .update(`${timestamp}.${rawBody ?? JSON.stringify(body)}`)
       .digest('hex');
     const supplied = Buffer.from(signature || '', 'hex');
     const wanted = Buffer.from(expected, 'hex');
@@ -522,9 +536,9 @@ export class OrdersService {
         (body.eventType === 'wallet.credited' ||
           body.eventType === 'wallet.debited')
       ) {
-        const vendor = await this.db.vendor.findUnique({
-          where: { externalCheckoutUserId: body.data.externalUserId },
-        });
+        const vendor = await this.findVendorForPaymentEvent(
+          body.data.externalUserId,
+        );
         if (!vendor)
           throw new NotFoundException('Vendor payment identity not found');
         let collection = null;
@@ -543,9 +557,9 @@ export class OrdersService {
       body.eventType === 'wallet.credited' ||
       body.eventType === 'wallet.debited'
     ) {
-      const vendor = await this.db.vendor.findUnique({
-        where: { externalCheckoutUserId: body.data.externalUserId },
-      });
+      const vendor = await this.findVendorForPaymentEvent(
+        body.data.externalUserId,
+      );
       if (!vendor)
         throw new NotFoundException('Vendor payment identity not found');
       await this.db.paymentWebhookEvent.create({

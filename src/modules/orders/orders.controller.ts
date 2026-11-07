@@ -151,11 +151,18 @@ export class PublicOrdersController {
 export class PaymentWebhookController {
   constructor(private readonly orders: OrdersService) {}
   @Post() handle(
+    @Req() request: Request & { rawBody?: Buffer },
     @Headers('x-pepsa-timestamp') timestamp: string,
     @Headers('x-pepsa-signature') signature: string,
     @Headers('x-pepsa-key-id') keyId: string,
     @Body() body: PaymentWebhookDto,
   ) {
-    return this.orders.paymentWebhook(timestamp, signature, keyId, body);
+    return this.orders.paymentWebhook(
+      timestamp,
+      signature,
+      keyId,
+      body,
+      request.rawBody?.toString('utf8'),
+    );
   }
 }
