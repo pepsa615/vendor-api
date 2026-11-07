@@ -406,6 +406,9 @@ export class AccountService {
       bank_code: bankCode,
     });
   }
+  internalEnquiry(accountNumber: string) {
+    return this.pay.internalAccountEnquiry({ account_number: accountNumber });
+  }
   async transfer(
     tenantId: string,
     actorId: string,

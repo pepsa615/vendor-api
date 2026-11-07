@@ -282,3 +282,8 @@ Append entries; never rewrite historical evidence.
 
 - Raised the Vendor-to-Payment default timeout from 5 seconds to 15 seconds so it exceeds Payment's 10-second 9PSB timeout and preserves Payment's typed `NINE_PSB_TIMEOUT` response instead of aborting locally first.
 - Updated the environment example and all Payment integration fallback sites. The focused environment tests (2 tests) and Vendor server TypeScript passed. The broader unit command ran 75 tests successfully but remains red on the unrelated `publish-open-dispatch.spec.ts` mock missing `fees.resolveOptional`.
+
+## 2026-11-07 — Internal Pepsa recipient routing
+
+- Added a Vendor API proxy dedicated to internal account enquiry. Pepsa recipients now resolve through Payment's tenant-scoped ledger endpoint, while external accounts retain the existing 9PSB route.
+- Vendor server typecheck and build passed. Payment sandbox API and Vendor staging API were rebuilt, restarted, and returned healthy readiness checks.
