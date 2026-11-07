@@ -22,6 +22,7 @@ import { AccountService } from './account.service.js';
 import {
   AccountEnquiryDto,
   CashOutDto,
+  InternalAccountEnquiryDto,
   PinDto,
   ResetPinDto,
   TransferDto,
@@ -112,6 +113,11 @@ export class AccountController {
     @Body() b: AccountEnquiryDto,
   ) {
     return this.account.enquiry(b.accountNumber, b.bankCode);
+  }
+  @Post('internal-account-enquiry')
+  @RequirePermission('wallet.read')
+  internalEnquiry(@Body() b: InternalAccountEnquiryDto) {
+    return this.account.internalEnquiry(b.accountNumber);
   }
   @Post('transfers') @RequirePermission('wallet.manage') transfer(
     @Req() r: ActorRequest,

@@ -142,6 +142,12 @@ export class PaymentService {
       body: JSON.stringify(input),
     });
   }
+  internalAccountEnquiry(input: unknown) {
+    return this.request<any>('transactions/internal-account-enquiry', {
+      method: 'POST',
+      body: JSON.stringify(input),
+    });
+  }
   initiateTransfer(input: unknown, key: string) {
     return this.request<any>('transactions/initiate', {
       method: 'POST',

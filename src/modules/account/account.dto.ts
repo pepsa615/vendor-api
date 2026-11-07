@@ -28,6 +28,9 @@ export class AccountEnquiryDto {
   @Matches(/^\d{10,20}$/) accountNumber: string;
   @Matches(/^\d{3,10}$/) bankCode: string;
 }
+export class InternalAccountEnquiryDto {
+  @Matches(/^\d{10,20}$/) accountNumber: string;
+}
 export class TransferRecipientDto {
   @IsOptional() @Matches(/^\d{10,20}$/) counterpartyAccountNumber?: string;
   @IsOptional() @Matches(/^\d{10,20}$/) destinationAccountNumber?: string;
