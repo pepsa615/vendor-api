@@ -36,7 +36,9 @@ const schema = z.object({
   GOOGLE_MAPS_TIMEOUT_MS: z.coerce.number().int().positive().default(5000),
   PEPSA_PAYMENT_URL: z.url().optional(),
   PEPSA_PAYMENT_API_KEY: z.string().min(16).optional(),
-  PEPSA_PAYMENT_TIMEOUT_MS: z.coerce.number().int().positive().default(5000),
+  // Must exceed Pepsa Payment's default 10s provider timeout so its typed
+  // upstream response reaches Vendor instead of being masked by a local abort.
+  PEPSA_PAYMENT_TIMEOUT_MS: z.coerce.number().int().positive().default(15000),
   PEPSA_PAYMENT_WEBHOOK_SECRET: z.string().min(32).optional(),
   /** RiderApp payment platform (WALLET_API_*). Required when riders are not on the vendor payment key. */
   PEPSA_RIDER_PAYMENT_URL: z.string().url().optional(),

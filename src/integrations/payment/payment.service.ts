@@ -36,7 +36,7 @@ export class PaymentService {
             ...init.headers,
           },
           signal: AbortSignal.timeout(
-            Number(this.config.get('PEPSA_PAYMENT_TIMEOUT_MS') ?? 5000),
+            Number(this.config.get('PEPSA_PAYMENT_TIMEOUT_MS') ?? 15000),
           ),
         },
       );
@@ -81,7 +81,7 @@ export class PaymentService {
   }): Promise<string> {
     const source = await fetch(input.sourceUrl, {
       signal: AbortSignal.timeout(
-        Number(this.config.get('PEPSA_PAYMENT_TIMEOUT_MS') ?? 5000),
+        Number(this.config.get('PEPSA_PAYMENT_TIMEOUT_MS') ?? 15000),
       ),
     });
     if (!source.ok) throw new BadGatewayException('KYC export failed');
@@ -110,7 +110,7 @@ export class PaymentService {
       headers: upload.required_headers,
       body: bytes,
       signal: AbortSignal.timeout(
-        Number(this.config.get('PEPSA_PAYMENT_TIMEOUT_MS') ?? 5000),
+        Number(this.config.get('PEPSA_PAYMENT_TIMEOUT_MS') ?? 15000),
       ),
     });
     if (!uploaded.ok) throw new BadGatewayException('KYC import failed');
@@ -247,7 +247,7 @@ export class PaymentService {
             expiry_hours: 1,
           }),
           signal: AbortSignal.timeout(
-            Number(this.config.get('PEPSA_PAYMENT_TIMEOUT_MS') ?? 5000),
+            Number(this.config.get('PEPSA_PAYMENT_TIMEOUT_MS') ?? 15000),
           ),
         },
       );

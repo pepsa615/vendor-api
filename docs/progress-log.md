@@ -277,3 +277,8 @@ Append entries; never rewrite historical evidence.
 - Existing revisions remain readable after migration, but a legacy revision missing either field cannot be resubmitted or approved until the Vendor supplies the missing information. Profile editing supports that correction without requiring an already stored NIN to be re-entered.
 - Added the dispatcher-guarantor compliance migration, demo seed fields, Vendor create/edit/detail UI, Admin review labels and focused validation/redaction coverage.
 - Verification: Vendor backend Prisma validation/generation, typecheck, lint and all 60 tests passed; Vendor frontend typecheck and production bundle passed; Admin frontend typecheck, 5 tests and production build passed. The full Vendor frontend unit run remains affected by the repository's existing Node 22 ESM loader incompatibility in React Router/Redux dependencies; 11 unaffected tests passed before the three suites failed during import.
+
+## 2026-11-07 — Payment timeout-chain alignment
+
+- Raised the Vendor-to-Payment default timeout from 5 seconds to 15 seconds so it exceeds Payment's 10-second 9PSB timeout and preserves Payment's typed `NINE_PSB_TIMEOUT` response instead of aborting locally first.
+- Updated the environment example and all Payment integration fallback sites. The focused environment tests (2 tests) and Vendor server TypeScript passed. The broader unit command ran 75 tests successfully but remains red on the unrelated `publish-open-dispatch.spec.ts` mock missing `fees.resolveOptional`.
