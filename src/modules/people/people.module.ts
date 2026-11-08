@@ -16,6 +16,6 @@ import { RiderPresenceGuard } from './rider-presence.guard.js';
     InternalRiderPresenceController,
   ],
   providers: [PeopleService, RiderPresenceGuard],
-  exports: [PeopleService],
+  exports: [PeopleService, RiderPresenceGuard],
 })
 export class PeopleModule {}
