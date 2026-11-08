@@ -12,6 +12,7 @@ import {
   UseGuards,
   UseInterceptors,
 } from '@nestjs/common';
+import { VERSION_NEUTRAL } from '@nestjs/common';
 import {
   ApiBearerAuth,
   ApiConsumes,
@@ -32,7 +33,21 @@ import {
   UpdateRoleDto,
 } from './administration.dto.js';
 import { AdministrationService } from './administration.service.js';
+import { RiderPresenceGuard } from '../people/rider-presence.guard.js';
 type ActorRequest = Request & { actor: AuthenticatedActor };
+
+@ApiBearerAuth()
+@ApiTags('Rider partner profile')
+@UseGuards(RiderPresenceGuard)
+@Controller({ path: 'internal/v1/partners', version: VERSION_NEUTRAL })
+export class InternalPartnerProfileController {
+  constructor(private readonly service: AdministrationService) {}
+
+  @Get(':vendorId')
+  get(@Param('vendorId') vendorId: string) {
+    return this.service.publicPartnerProfile(vendorId);
+  }
+}
 
 @ApiBearerAuth()
 @UseGuards(IamAuthGuard, PermissionGuard)

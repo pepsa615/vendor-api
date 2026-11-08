@@ -28,6 +28,59 @@ export class AdministrationService {
     private readonly storage: DocumentStorageService,
   ) {}
 
+  async publicPartnerProfile(tenantId: string) {
+    const profile = await this.db.vendor.findUnique({
+      where: { id: tenantId },
+      select: {
+        id: true,
+        businessName: true,
+        email: true,
+        phone: true,
+        tagline: true,
+        description: true,
+        logoObjectKey: true,
+        updatedAt: true,
+        applications: {
+          orderBy: { version: 'desc' },
+          take: 1,
+          select: { businessData: true },
+        },
+      },
+    });
+    if (!profile) throw new NotFoundException('Partner not found');
+    const business = (profile.applications[0]?.businessData ?? {}) as Record<
+      string,
+      unknown
+    >;
+    let logoUrl: string | null = null;
+    if (profile.logoObjectKey) {
+      try {
+        logoUrl = await this.storage.signedDownload(profile.logoObjectKey);
+      } catch {
+        logoUrl = null;
+      }
+    }
+    const text = (key: string) =>
+      typeof business[key] === 'string' ? String(business[key]).trim() || null : null;
+    return {
+      id: profile.id,
+      name: profile.businessName,
+      tagline: profile.tagline,
+      description: profile.description,
+      logoUrl,
+      address: text('address') ?? text('businessAddress') ?? text('registeredAddress'),
+      city: text('city'),
+      state: text('state'),
+      country: text('country') ?? 'Nigeria',
+      phone: text('supportPhone') ?? profile.phone,
+      email: text('supportEmail') ?? profile.email,
+      whatsapp: text('whatsapp') ?? profile.phone,
+      website: text('website'),
+      businessHours: text('businessHours'),
+      updatedAt: profile.updatedAt.toISOString(),
+    };
+  }
+
   async profile(tenantId: string) {
     const profile = await this.db.vendor.findUniqueOrThrow({
       where: { id: tenantId },
