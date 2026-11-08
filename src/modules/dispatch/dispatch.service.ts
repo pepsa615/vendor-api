@@ -67,10 +67,7 @@ export const suggestedPayout = (amountMinor: number, revenueShareBps: number) =>
   Math.round((amountMinor * revenueShareBps) / 10_000);
 
 /** Open dispatch: paid fare is the pie; Pepsa keeps fee, rider gets the rest. */
-export const openDispatchSplit = (
-  paidMinor: number,
-  pepsaFeeMinor: number,
-) => {
+export const openDispatchSplit = (paidMinor: number, pepsaFeeMinor: number) => {
   const paid = Math.max(0, paidMinor);
   const fee = Math.min(Math.max(0, pepsaFeeMinor), paid);
   return {
@@ -219,8 +216,7 @@ export class DispatchService {
     const suggestedPayoutMinor = revenueShareBps
       ? suggestedPayout(totalAmountMinor, revenueShareBps)
       : null;
-    const quoteCurrency =
-      providerQuote?.currency ?? orders[0]!.currency;
+    const quoteCurrency = providerQuote?.currency ?? orders[0]!.currency;
     const resolvedFee =
       input.mode === 'OWN_FLEET'
         ? await this.fees.resolve(
@@ -1281,7 +1277,8 @@ export class DispatchService {
 
   /**
    * Open / general pool: vendor prepaid the paid fare (quote).
-   * On complete, credit rider (100−x)%; Pepsa retains x% as earningsMinor.
+   * Pepsa keeps markup + post-grouping fee; rider gets final riderPayoutMinor.
+   * earningsMinor = fundingRequired − final rider payout.
    */
   private async settleOpenDispatch(dispatch: {
     id: string;
@@ -1290,10 +1287,57 @@ export class DispatchService {
     currency: string;
     fundingRequiredMinor: number;
     feeAmountMinor?: number | null;
+    payoutAmountMinor?: number | null;
     providerReference: string | null;
   }) {
-    const pepsaCut = Math.max(0, dispatch.feeAmountMinor ?? 0);
-    const payout = Math.max(0, dispatch.fundingRequiredMinor - pepsaCut);
+    if (!dispatch.providerReference) {
+      await this.db.vendorSettlementEntry.upsert({
+        where: {
+          tenantId_source_sourceReference: {
+            tenantId: dispatch.tenantId,
+            source: 'RIDER_FULFILLED',
+            sourceReference: dispatch.publicReference,
+          },
+        },
+        update: { status: 'FAILED' },
+        create: {
+          tenantId: dispatch.tenantId,
+          source: 'RIDER_FULFILLED',
+          sourceReference: dispatch.publicReference,
+          counterpartyId: null,
+          counterpartyName: 'Open dispatch rider',
+          totalAmountMinor: dispatch.fundingRequiredMinor,
+          earningsMinor: Math.max(0, dispatch.feeAmountMinor ?? 0),
+          currency: dispatch.currency,
+          status: 'FAILED',
+        },
+      });
+      return;
+    }
+    const resolvedPayout = await this.provider.resolveRiderPayoutMinor(
+      dispatch.providerReference,
+    );
+    const payout = Math.max(
+      0,
+      resolvedPayout ??
+        dispatch.payoutAmountMinor ??
+        dispatch.fundingRequiredMinor - (dispatch.feeAmountMinor ?? 0),
+    );
+    const pepsaCut = Math.max(0, dispatch.fundingRequiredMinor - payout);
+    if (
+      resolvedPayout != null &&
+      (dispatch.payoutAmountMinor == null ||
+        dispatch.payoutAmountMinor !== payout)
+    ) {
+      await this.db.dispatch.update({
+        where: { id: dispatch.id },
+        data: {
+          payoutAmountMinor: payout,
+          // Keep feeAmountMinor as the full Pepsa cut (markup + grouping).
+          feeAmountMinor: pepsaCut,
+        },
+      });
+    }
     const entry = await this.db.vendorSettlementEntry.upsert({
       where: {
         tenantId_source_sourceReference: {
@@ -1318,14 +1362,11 @@ export class DispatchService {
     if (payout === 0) {
       await this.db.vendorSettlementEntry.update({
         where: { id: entry.id },
-        data: { status: 'COMPLETED', completedAt: new Date() },
-      });
-      return;
-    }
-    if (!dispatch.providerReference) {
-      await this.db.vendorSettlementEntry.update({
-        where: { id: entry.id },
-        data: { status: 'FAILED' },
+        data: {
+          status: 'COMPLETED',
+          earningsMinor: pepsaCut,
+          completedAt: new Date(),
+        },
       });
       return;
     }
@@ -1354,6 +1395,7 @@ export class DispatchService {
         where: { id: entry.id },
         data: {
           status: 'COMPLETED',
+          earningsMinor: pepsaCut,
           paymentReference: String(credit.transaction_id ?? ''),
           counterpartyId: riderExternalId,
           completedAt: new Date(),
