@@ -267,6 +267,25 @@ export class PepsaOrderDispatchAdapter extends DispatchProviderPort {
     }
   }
 
+  async resolveRiderPayoutMinor(providerReference: string) {
+    const base = this.required('PEPSA_ORDER_URL');
+    try {
+      const row = await this.request(
+        `${base}/api/v1/orders/${providerReference}`,
+        {
+          method: 'GET',
+          headers: this.headers(`rider-payout:${providerReference}`),
+        },
+      );
+      const raw = row.riderPayoutMinor;
+      if (raw == null) return null;
+      const value = Number(raw);
+      return Number.isFinite(value) && value >= 0 ? Math.round(value) : null;
+    } catch {
+      return null;
+    }
+  }
+
   private code(value: string) {
     const normalized = value
       .trim()

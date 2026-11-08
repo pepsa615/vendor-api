@@ -72,6 +72,13 @@ export abstract class DispatchProviderPort {
   abstract resolveAssignedRider(
     providerReference: string,
   ): Promise<string | null>;
+  /**
+   * Final open-dispatch rider payout after grouping fee (kobo).
+   * Falls back to null when the shipment has not been grouped yet.
+   */
+  abstract resolveRiderPayoutMinor(
+    providerReference: string,
+  ): Promise<number | null>;
 }
 
 export abstract class DispatchFinancePort {
@@ -158,6 +165,9 @@ export class LocalDispatchProviderAdapter extends DispatchProviderPort {
   }
   async cancel() {}
   async resolveAssignedRider() {
+    return null;
+  }
+  async resolveRiderPayoutMinor() {
     return null;
   }
 }

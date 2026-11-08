@@ -71,7 +71,7 @@ describe('publishToOpenDispatch', () => {
       { get: () => undefined } as never,
       { record: vi.fn() } as never,
       {} as never,
-      {} as never,
+      { resolveOptional: vi.fn().mockResolvedValue(null) } as never,
       {} as never,
     );
     (sut as any).generalPoolQuote = vi.fn().mockResolvedValue({
