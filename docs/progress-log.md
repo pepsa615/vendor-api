@@ -287,7 +287,6 @@ Append entries; never rewrite historical evidence.
 
 - Added a Vendor API proxy dedicated to internal account enquiry. Pepsa recipients now resolve through Payment's tenant-scoped ledger endpoint, while external accounts retain the existing 9PSB route.
 - Vendor server typecheck and build passed. Payment sandbox API and Vendor staging API were rebuilt, restarted, and returned healthy readiness checks.
-
 ## 2026-11-08 — Open-dispatch post-grouping settlement
 
 - Open-dispatch completion now resolves Pepsa Order's final post-grouping rider payout before settlement credit. Pepsa earnings are recorded as reserved funding minus final rider payout, preserving both the original markup and the grouping fee.
