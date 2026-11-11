@@ -178,7 +178,9 @@ export class ProvisioningService {
         wallet = await this.payment.createWallet(
           {
             external_user_id: saga.tenantId,
-            user_type: 'business',
+            // Payment treats all logistics partners as vendor wallets. The
+            // Vendor entity type only controls the submitted KYC shape.
+            user_type: 'vendor',
             kyc: {
               full_name: saga.vendor.businessName.trim().slice(0, 150),
               phone_number: normalizeE164Phone(
@@ -199,7 +201,14 @@ export class ProvisioningService {
         // this tenant instead of leaving the vendor stuck in FAILED_RETRYABLE.
         if (!(error instanceof HttpException) || error.getStatus() !== 409)
           throw error;
-        wallet = await this.payment.getWalletByExternalId(saga.tenantId);
+        try {
+          wallet = await this.payment.getWalletByExternalId(saga.tenantId);
+        } catch {
+          // A uniqueness conflict can also mean the submitted identity belongs
+          // to another Payment user. Never replace that useful conflict with a
+          // misleading "wallet not found" response for this external ID.
+          throw error;
+        }
       }
       return await this.db.$transaction(async (tx) => {
         await tx.vendor.update({

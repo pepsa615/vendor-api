@@ -82,6 +82,7 @@ describe('ProvisioningService', () => {
     expect(payment.createWallet).toHaveBeenCalledTimes(1);
     expect(payment.createWallet).toHaveBeenCalledWith(
       expect.objectContaining({
+        user_type: 'vendor',
         kyc: expect.objectContaining({
           full_name: 'Vendor Ltd',
           phone_number: '+2348012345678',

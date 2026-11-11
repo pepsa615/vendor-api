@@ -7,7 +7,7 @@ import {
 import { Prisma } from '../../generated/prisma/client.js';
 import { PrismaService } from '../../core/database/prisma.service.js';
 import { AuditService } from '../../common/audit/audit.service.js';
-import { sha256 } from '../../common/security/crypto.js';
+import { decryptSensitive, sha256 } from '../../common/security/crypto.js';
 import { DocumentStorageService } from '../../integrations/storage/document-storage.service.js';
 import { normalizeE164Phone } from '../provisioning/provisioning.service.js';
 import type { ReviewApplicationDto } from './admin-review.dto.js';
@@ -101,6 +101,7 @@ export class AdminReviewService {
         city: director.city,
         role: director.role,
         ownershipShare: String(director.ownershipShare),
+        identityNumber: decryptSensitive(director.encryptedIdentityNo),
       })),
       documents: value.documents,
     };
@@ -116,6 +117,10 @@ export class AdminReviewService {
       homeAddress: value.homeAddress,
       state: value.state,
       city: value.city,
+      identityNumber:
+        typeof value.encryptedIdentityNo === 'string' && value.encryptedIdentityNo
+          ? decryptSensitive(value.encryptedIdentityNo)
+          : undefined,
     };
   }
   async document(applicationId: string, documentId: string, actorId: string) {

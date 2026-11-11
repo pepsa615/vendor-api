@@ -293,3 +293,10 @@ Append entries; never rewrite historical evidence.
 - Open-dispatch completion now resolves Pepsa Order's final post-grouping rider payout before settlement credit. Pepsa earnings are recorded as reserved funding minus final rider payout, preserving both the original markup and the grouping fee.
 - Missing provider references fail safely, payout resolution retains the prior immutable fallback, and repeated completion remains idempotent through the existing settlement source reference.
 - Verification: typecheck, lint and architecture boundaries passed; all 25 unit files/77 tests and the API e2e test passed; the production build passed. The repository-wide format gate remains red on ten pre-existing files already tracked as concurrent formatting differences.
+
+## 2026-11-11 — Vendor KYC review and provisioning correction
+
+- Admin vendor review now presents the submitted CAC/registration fields, individual NIN and director NIN values to the existing permission-gated reviewer surface. Reads remain attributed through the Admin audit path and identity values are never logged.
+- Vendor approval provisioning now creates the dedicated Payment `vendor` wallet type for both individual and incorporated logistics partners, preserving the Tier-3 KYC and settlement contract.
+- Duplicate-wallet recovery now adopts only a wallet owned by the same Vendor external ID. If the conflict belongs to another identity, the original actionable conflict is preserved instead of being overwritten by a misleading wallet-not-found error.
+- Verification: Vendor server typecheck and all 25 test files/77 tests passed; Admin frontend typecheck and all 5 tests passed.
