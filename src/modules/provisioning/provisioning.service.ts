@@ -232,6 +232,8 @@ export class ProvisioningService {
         });
       });
     } catch (error) {
+      const identityConflict =
+        error instanceof HttpException && error.getStatus() === 409;
       const nextAttemptAt = new Date(
         Date.now() + Math.min(300_000, 5_000 * 2 ** saga.attempts),
       );
@@ -249,9 +251,13 @@ export class ProvisioningService {
         this.db.vendorProvisioningSaga.update({
           where: { id },
           data: {
-            status: saga.attempts >= 4 ? 'MANUAL_REVIEW' : 'FAILED_RETRYABLE',
+            status:
+              identityConflict || saga.attempts >= 4
+                ? 'MANUAL_REVIEW'
+                : 'FAILED_RETRYABLE',
             leaseExpiresAt: null,
-            nextAttemptAt: saga.attempts >= 4 ? null : nextAttemptAt,
+            nextAttemptAt:
+              identityConflict || saga.attempts >= 4 ? null : nextAttemptAt,
             lastErrorCode: code.slice(0, 300),
           },
         }),

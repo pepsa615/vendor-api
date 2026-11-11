@@ -298,4 +298,5 @@ Append entries; never rewrite historical evidence.
 - Admin vendor review now presents the submitted CAC/registration fields, individual NIN and director NIN values to the existing permission-gated reviewer surface. Reads remain attributed through the Admin audit path and identity values are never logged.
 - Vendor approval provisioning now creates the dedicated Payment `vendor` wallet type for both individual and incorporated logistics partners, preserving the Tier-3 KYC and settlement contract.
 - Duplicate-wallet recovery now adopts only a wallet owned by the same Vendor external ID. If the conflict belongs to another identity, the original actionable conflict is preserved instead of being overwritten by a misleading wallet-not-found error.
+- Identity ownership conflicts move directly to governed manual review instead of retrying a permanent KYC collision and repeatedly importing documents.
 - Verification: Vendor server typecheck and all 25 test files/77 tests passed; Admin frontend typecheck and all 5 tests passed.
