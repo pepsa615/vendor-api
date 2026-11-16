@@ -300,3 +300,6 @@ Append entries; never rewrite historical evidence.
 - Duplicate-wallet recovery now adopts only a wallet owned by the same Vendor external ID. If the conflict belongs to another identity, the original actionable conflict is preserved instead of being overwritten by a misleading wallet-not-found error.
 - Identity ownership conflicts move directly to governed manual review instead of retrying a permanent KYC collision and repeatedly importing documents.
 - Verification: Vendor server typecheck and all 25 test files/77 tests passed; Admin frontend typecheck and all 5 tests passed.
+## 2026-11-16 — Versioned registration consent
+
+- Vendor registration now requires separate Terms, Privacy, and Indemnity assertions and appends one audit event per accepted document/version.

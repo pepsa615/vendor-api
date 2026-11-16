@@ -1,5 +1,6 @@
 import { ApiProperty } from '@nestjs/swagger';
 import {
+  Equals,
   IsEmail,
   IsIn,
   IsString,
@@ -23,6 +24,9 @@ export class RegisterDto {
   @MaxLength(128)
   password: string;
   @ApiProperty() @IsString() @MinLength(2) @MaxLength(160) displayName: string;
+  @ApiProperty({ enum: [true] }) @Equals(true) termsAccepted: true;
+  @ApiProperty({ enum: [true] }) @Equals(true) privacyAccepted: true;
+  @ApiProperty({ enum: [true] }) @Equals(true) indemnityAccepted: true;
 }
 
 export class VerifyEmailDto {

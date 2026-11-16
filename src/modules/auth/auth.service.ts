@@ -95,6 +95,14 @@ export class AuthService {
       actorId: 'public',
       action: 'auth.registered',
     });
+    for (const documentType of ['TERMS', 'PRIVACY', 'INDEMNITY']) {
+      await this.audit.record({
+        tenantId: result.vendorId,
+        actorId: 'public',
+        action: 'legal.consent.accepted',
+        metadata: { documentType, documentVersion: '2026-11-16' },
+      });
+    }
     return { email: result.email, status: 'EMAIL_PENDING' };
   }
 
